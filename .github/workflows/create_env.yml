@@ -38,7 +38,7 @@ jobs:
         echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: miniconda-${{ runner.os }}
         path: ${{ env.ZIP_PATH }}
@@ -59,7 +59,7 @@ jobs:
         echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: anymatix-${{ runner.os }}
         path: ${{ env.ZIP_PATH }}
