@@ -25,48 +25,6 @@ jobs:
     - name: List directories
       run: ls -la
 
-    - name: Zip Miniconda directory
-      shell: bash
-      run: |
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          zipPath="miniconda-windows.zip"
-          if [ -d "anymatix/miniconda" ]; then
-            cd anymatix
-            zip -r ../$zipPath miniconda
-            cd ..
-          else
-            echo "Error: miniconda directory not found in anymatix/"
-            exit 1
-          fi
-        elif [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="miniconda-macos.zip"
-          if [ -d "anymatix/miniconda" ]; then
-            cd anymatix
-            zip -r ../$zipPath miniconda
-            cd ..
-          else
-            echo "Error: miniconda directory not found in anymatix/"
-            exit 1
-          fi
-        else
-          zipPath="miniconda-linux.zip"
-          if [ -d "anymatix/miniconda" ]; then
-            cd anymatix
-            zip -r ../$zipPath miniconda
-            cd ..
-          else
-            echo "Error: miniconda directory not found in anymatix/"
-            exit 1
-          fi
-        fi
-        echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: miniconda-${{ runner.os }}
-        path: ${{ env.ZIP_PATH }}
-
     - name: Zip anymatix directory
       shell: bash
       run: |
