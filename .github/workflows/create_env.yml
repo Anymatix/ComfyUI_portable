@@ -2,6 +2,15 @@ name: Create Miniconda Zips for Multiple Platforms
 
 on:
   workflow_dispatch: # Manual trigger
+    inputs:
+      zip_root_name:
+        description: 'Root name for zip files (default: anymatix)'
+        required: false
+        default: 'anymatix'
+      version:
+        description: 'Release version (default: 1.0.0)'
+        required: false
+        default: '1.0.0'
 
 jobs:
   build:
@@ -9,6 +18,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      ZIP_ROOT_NAME: ${{ github.event.inputs.zip_root_name || 'anymatix' }}
+      RELEASE_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
 
     steps:
     - name: Checkout code
@@ -30,13 +42,33 @@ jobs:
       if: runner.os == 'Windows'
       run: Get-ChildItem -Force
 
+    - name: Clean up before zipping
+      shell: bash
+      run: |
+        if [ -d "anymatix/miniconda" ]; then
+          # Remove unnecessary files
+          find anymatix/miniconda -type d -name '__pycache__' -exec rm -rf {} +
+          find anymatix/miniconda -type d -name 'tests' -exec rm -rf {} +
+          find anymatix/miniconda -type d -name 'test' -exec rm -rf {} +
+          find anymatix/miniconda -type d -name '*.dist-info' -exec rm -rf {} +
+          find anymatix/miniconda -type d -name '*.egg-info' -exec rm -rf {} +
+          
+          # Remove documentation files
+          find anymatix/miniconda -type f -name '*.pyc' -delete
+          find anymatix/miniconda -type f -name '*.pyo' -delete
+          find anymatix/miniconda -type f -name '*.pyd' -delete
+          find anymatix/miniconda -type f -name '*.so' -delete
+        fi
+
     - name: Zip anymatix directory (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $zipPath = "anymatix-windows.zip"
+        $zipPath = "${{ env.ZIP_ROOT_NAME }}-windows.zip"
         if (Test-Path -Path "anymatix") {
-          Compress-Archive -Path "anymatix" -DestinationPath $zipPath -Force
+          Push-Location -Path "anymatix"
+          Compress-Archive -Path "." -DestinationPath "../$zipPath" -CompressionLevel Optimal
+          Pop-Location
         } else {
           Write-Error "Error: anymatix directory not found"
           exit 1
@@ -48,13 +80,15 @@ jobs:
       shell: bash
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="anymatix-macos.zip"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-macos.zip"
         else
-          zipPath="anymatix-linux.zip"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-linux.zip"
         fi
         
         if [ -d "anymatix" ]; then
-          zip -r $zipPath anymatix
+          cd anymatix
+          zip -r -9 ../$zipPath . -x "*.git*" "*.DS_Store*"
+          cd ..
         else
           echo "Error: anymatix directory not found"
           exit 1
@@ -64,5 +98,25 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: anymatix-${{ runner.os }}
+        name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}
         path: ${{ env.ZIP_PATH }}
+
+    - name: Create GitHub Release
+      if: runner.os == 'ubuntu-latest' # Only run once per workflow
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ env.RELEASE_VERSION }}
+        release_name: Release v${{ env.RELEASE_VERSION }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ${{ env.ZIP_PATH }}
+        asset_name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}.zip
+        asset_content_type: application/zip
