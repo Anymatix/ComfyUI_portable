@@ -19,7 +19,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
-      ZIP_ROOT_NAME: ${{ github.event.inputs.zip_root_name || 'anymatix' }}
+      ZIP_ROOT_NAME: ${{ github.event.inputs.zip_root_name || 'anymatix-comfyui-portable' }}
       RELEASE_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
 
     steps:
