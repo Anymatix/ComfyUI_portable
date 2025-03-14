@@ -100,23 +100,3 @@ jobs:
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}
         path: ${{ env.ZIP_PATH }}
-
-    - name: Create GitHub Release
-      if: runner.os == 'ubuntu-latest' # Only run once per workflow
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ env.RELEASE_VERSION }}
-        release_name: Release v${{ env.RELEASE_VERSION }}
-        draft: false
-        prerelease: false
-
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ${{ env.ZIP_PATH }}
-        asset_name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}.zip
-        asset_content_type: application/zip
