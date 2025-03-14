@@ -6,7 +6,7 @@ on:
       zip_root_name:
         description: 'Root name for zip files (default: anymatix)'
         required: false
-        default: 'anymatix'
+        default: 'anymatix-comfyui-portable'
       version:
         description: 'Release version (default: 1.0.0)'
         required: false
