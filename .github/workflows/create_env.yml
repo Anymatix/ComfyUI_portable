@@ -22,18 +22,42 @@ jobs:
     - name: Run setup script
       run: node setup-python-env.js
 
+    - name: List directories
+      run: ls -la
+
     - name: Zip Miniconda directory
       shell: bash
       run: |
         if [[ "$RUNNER_OS" == "Windows" ]]; then
           zipPath="miniconda-windows.zip"
-          zip -r $zipPath miniconda
+          if [ -d "anymatix/miniconda" ]; then
+            cd anymatix
+            zip -r ../$zipPath miniconda
+            cd ..
+          else
+            echo "Error: miniconda directory not found in anymatix/"
+            exit 1
+          fi
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
           zipPath="miniconda-macos.zip"
-          zip -r $zipPath miniconda
+          if [ -d "anymatix/miniconda" ]; then
+            cd anymatix
+            zip -r ../$zipPath miniconda
+            cd ..
+          else
+            echo "Error: miniconda directory not found in anymatix/"
+            exit 1
+          fi
         else
           zipPath="miniconda-linux.zip"
-          zip -r $zipPath miniconda
+          if [ -d "anymatix/miniconda" ]; then
+            cd anymatix
+            zip -r ../$zipPath miniconda
+            cd ..
+          else
+            echo "Error: miniconda directory not found in anymatix/"
+            exit 1
+          fi
         fi
         echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
 
@@ -48,13 +72,28 @@ jobs:
       run: |
         if [[ "$RUNNER_OS" == "Windows" ]]; then
           zipPath="anymatix-windows.zip"
-          zip -r $zipPath anymatix
+          if [ -d "anymatix" ]; then
+            zip -r $zipPath anymatix
+          else
+            echo "Error: anymatix directory not found"
+            exit 1
+          fi
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
           zipPath="anymatix-macos.zip"
-          zip -r $zipPath anymatix
+          if [ -d "anymatix" ]; then
+            zip -r $zipPath anymatix
+          else
+            echo "Error: anymatix directory not found"
+            exit 1
+          fi
         else
           zipPath="anymatix-linux.zip"
-          zip -r $zipPath anymatix
+          if [ -d "anymatix" ]; then
+            zip -r $zipPath anymatix
+          else
+            echo "Error: anymatix directory not found"
+            exit 1
+          fi
         fi
         echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
 
