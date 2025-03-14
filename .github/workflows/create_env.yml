@@ -1,0 +1,65 @@
+name: Create Miniconda Zips for Multiple Platforms
+
+on:
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Run setup script
+      run: node src/python/setup-python-env.js
+
+    - name: Zip Miniconda directory
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          zipPath="miniconda-windows.zip"
+          zip -r $zipPath miniconda
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          zipPath="miniconda-macos.zip"
+          zip -r $zipPath miniconda
+        else
+          zipPath="miniconda-linux.zip"
+          zip -r $zipPath miniconda
+        fi
+        echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: miniconda-${{ runner.os }}
+        path: ${{ env.ZIP_PATH }}
+
+    - name: Zip anymatix directory
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          zipPath="anymatix-windows.zip"
+          zip -r $zipPath anymatix
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          zipPath="anymatix-macos.zip"
+          zip -r $zipPath anymatix
+        else
+          zipPath="anymatix-linux.zip"
+          zip -r $zipPath anymatix
+        fi
+        echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: anymatix-${{ runner.os }}
+        path: ${{ env.ZIP_PATH }}
