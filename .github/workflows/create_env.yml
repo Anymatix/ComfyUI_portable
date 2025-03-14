@@ -22,8 +22,13 @@ jobs:
     - name: Run setup script
       run: node setup-python-env.js
 
-    - name: List directories
+    - name: List directories (Unix)
+      if: runner.os != 'Windows'
       run: ls -la
+
+    - name: List directories (Windows)
+      if: runner.os == 'Windows'
+      run: Get-ChildItem -Force
 
     - name: Zip anymatix directory
       shell: bash
