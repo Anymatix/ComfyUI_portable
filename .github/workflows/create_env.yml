@@ -20,7 +20,7 @@ jobs:
         node-version: '18'
 
     - name: Run setup script
-      run: node src/python/setup-python-env.js
+      run: node setup-python-env.js
 
     - name: Zip Miniconda directory
       shell: bash
