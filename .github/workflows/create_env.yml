@@ -30,33 +30,34 @@ jobs:
       if: runner.os == 'Windows'
       run: Get-ChildItem -Force
 
-    - name: Zip anymatix directory
+    - name: Zip anymatix directory (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $zipPath = "anymatix-windows.zip"
+        if (Test-Path -Path "anymatix") {
+          Compress-Archive -Path "anymatix" -DestinationPath $zipPath -Force
+        } else {
+          Write-Error "Error: anymatix directory not found"
+          exit 1
+        }
+        echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
+
+    - name: Zip anymatix directory (Unix)
+      if: runner.os != 'Windows'
       shell: bash
       run: |
-        if [[ "$RUNNER_OS" == "Windows" ]]; then
-          zipPath="anymatix-windows.zip"
-          if [ -d "anymatix" ]; then
-            zip -r $zipPath anymatix
-          else
-            echo "Error: anymatix directory not found"
-            exit 1
-          fi
-        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
           zipPath="anymatix-macos.zip"
-          if [ -d "anymatix" ]; then
-            zip -r $zipPath anymatix
-          else
-            echo "Error: anymatix directory not found"
-            exit 1
-          fi
         else
           zipPath="anymatix-linux.zip"
-          if [ -d "anymatix" ]; then
-            zip -r $zipPath anymatix
-          else
-            echo "Error: anymatix directory not found"
-            exit 1
-          fi
+        fi
+        
+        if [ -d "anymatix" ]; then
+          zip -r $zipPath anymatix
+        else
+          echo "Error: anymatix directory not found"
+          exit 1
         fi
         echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
 
