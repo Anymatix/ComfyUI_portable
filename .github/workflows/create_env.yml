@@ -69,51 +69,10 @@ jobs:
       if: runner.os == 'Windows'
       run: Get-ChildItem -Force
 
-    - name: Create zip archive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.zip"
-        if (Test-Path -Path "anymatix") {
-          # Change to parent directory and include anymatix directory
-          cd ..
-          $repoDir = Split-Path -Leaf $PWD
-          cd $repoDir
-          Compress-Archive -Path anymatix -DestinationPath $zipPath -CompressionLevel Optimal
-          # Report final archive size
-          Get-Item $zipPath | Select-Object Length,Name
-        } else {
-          Write-Error "Error: anymatix directory not found"
-          exit 1
-        }
-        echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
-
-    - name: Create zip archive (Unix)
-      if: runner.os != 'Windows'
-      shell: bash
-      run: |
-        if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-macos.zip"
-        else
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-linux.zip"
-        fi
-        
-        if [ -d "anymatix" ]; then
-          # Create zip with anymatix as the root directory
-          zip -r -9 -q "$zipPath" anymatix
-          # Report final archive size
-          du -sh "$zipPath"
-          # Verify the archive contents
-          echo "Archive contents:"
-          unzip -l "$zipPath" | head -n 20
-        else
-          echo "Error: anymatix directory not found"
-          exit 1
-        fi
-        echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
-
+    # Upload the anymatix directory directly as an artifact
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}
-        path: ${{ env.ZIP_PATH }} 
+        path: anymatix
+        compression-level: 9 

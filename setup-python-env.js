@@ -284,8 +284,9 @@ async function cleanupEnvironment() {
       path.join(MINIFORGE_DIR, '**', '__pycache__'),
       path.join(MINIFORGE_DIR, '**', 'tests'),
       path.join(MINIFORGE_DIR, '**', 'test'),
-      path.join(MINIFORGE_DIR, '**', '*.dist-info'),
-      path.join(MINIFORGE_DIR, '**', '*.egg-info'),
+      // Preserve metadata for critical packages
+      // path.join(MINIFORGE_DIR, '**', '*.dist-info'),
+      // path.join(MINIFORGE_DIR, '**', '*.egg-info'),
       path.join(MINIFORGE_DIR, '**', 'man'),
       path.join(MINIFORGE_DIR, '**', 'doc'),
       path.join(MINIFORGE_DIR, '**', 'docs'),
@@ -300,6 +301,33 @@ async function cleanupEnvironment() {
         if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
           console.log(`Removing directory: ${match}`);
           deleteFolderRecursive(match);
+        }
+      }
+    }
+
+    // Selectively remove metadata directories, preserving critical ones
+    console.log('Selectively removing metadata directories...');
+    const criticalPackages = ['tqdm', 'transformers', 'torch', 'numpy', 'pillow', 'pil', 'tokenizers', 'safetensors'];
+    const metadataPatterns = [
+      path.join(MINIFORGE_DIR, '**', '*.dist-info'),
+      path.join(MINIFORGE_DIR, '**', '*.egg-info')
+    ];
+
+    for (const pattern of metadataPatterns) {
+      const matches = await promisifiedGlob(pattern, { nodir: false });
+      for (const match of matches) {
+        if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
+          // Check if this is a critical package
+          const shouldPreserve = criticalPackages.some(pkg =>
+            match.toLowerCase().includes(pkg.toLowerCase())
+          );
+
+          if (shouldPreserve) {
+            console.log(`Preserving metadata directory: ${match}`);
+          } else {
+            console.log(`Removing metadata directory: ${match}`);
+            deleteFolderRecursive(match);
+          }
         }
       }
     }
@@ -506,10 +534,8 @@ async function main() {
       ? path.join(MINIFORGE_DIR, 'Scripts', 'pip.exe')
       : path.join(MINIFORGE_DIR, 'bin', 'pip');
 
-    execSync(`"${pipPath}" install --no-cache-dir --no-deps -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
-
-    // Install only essential dependencies
-    execSync(`"${pipPath}" install --no-cache-dir --only-binary=:all: -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
+    // Install with metadata to ensure proper package information
+    execSync(`"${pipPath}" install --no-cache-dir -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
 
     // Clean up installer
     fs.unlinkSync(installerPath);
