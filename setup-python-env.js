@@ -333,12 +333,70 @@ async function cleanupEnvironment() {
       deleteFolderRecursive(envsDir);
     }
 
-    // Remove unnecessary file types
-    const fileExtensions = ['.a', '.js.map', '.h', '.hpp', '.c', '.cpp'];
+    // Preserve dynamic libraries needed by packages
+    console.log('Ensuring dynamic libraries are preserved...');
+
+    // Create .dylibs directories if they don't exist
+    const sitePackagesDir = path.join(MINIFORGE_DIR, 'lib', 'python*', 'site-packages');
+    const sitePackagesDirs = await promisifiedGlob(sitePackagesDir);
+
+    for (const dir of sitePackagesDirs) {
+      const pilDir = path.join(dir, 'PIL');
+      if (fs.existsSync(pilDir)) {
+        const dylibsDir = path.join(pilDir, '.dylibs');
+        if (!fs.existsSync(dylibsDir)) {
+          fs.mkdirSync(dylibsDir, { recursive: true });
+        }
+
+        // Copy necessary dynamic libraries to PIL/.dylibs
+        const libDir = path.join(MINIFORGE_DIR, 'lib');
+        if (fs.existsSync(libDir)) {
+          const libFiles = await promisifiedGlob(path.join(libDir, 'libtiff*.dylib'));
+          for (const libFile of libFiles) {
+            const destFile = path.join(dylibsDir, path.basename(libFile));
+            console.log(`Copying ${libFile} to ${destFile}`);
+            fs.copyFileSync(libFile, destFile);
+          }
+
+          // Copy other common dependencies
+          const otherLibs = ['libjpeg*.dylib', 'libpng*.dylib', 'libz*.dylib', 'liblcms*.dylib', 'libwebp*.dylib'];
+          for (const libPattern of otherLibs) {
+            const libFiles = await promisifiedGlob(path.join(libDir, libPattern));
+            for (const libFile of libFiles) {
+              const destFile = path.join(dylibsDir, path.basename(libFile));
+              console.log(`Copying ${libFile} to ${destFile}`);
+              fs.copyFileSync(libFile, destFile);
+            }
+          }
+        }
+      }
+    }
+
+    // Remove unnecessary file types, but be more selective
+    const fileExtensions = ['.a', '.js.map'];
     for (const ext of fileExtensions) {
       const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
       for (const match of matches) {
         if (fs.existsSync(match) && fs.statSync(match).isFile()) {
+          fs.unlinkSync(match);
+        }
+      }
+    }
+
+    // Be more selective with header files - keep those that might be needed
+    const headerPatterns = [
+      path.join(MINIFORGE_DIR, 'include', '**', '*.h'),
+      path.join(MINIFORGE_DIR, 'include', '**', '*.hpp'),
+    ];
+
+    for (const pattern of headerPatterns) {
+      const matches = await promisifiedGlob(pattern);
+      for (const match of matches) {
+        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
+          // Skip essential headers
+          if (match.includes('numpy') || match.includes('python')) {
+            continue;
+          }
           fs.unlinkSync(match);
         }
       }

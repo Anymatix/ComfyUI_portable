@@ -75,6 +75,10 @@ jobs:
       run: |
         $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.zip"
         if (Test-Path -Path "anymatix") {
+          # Change to parent directory and include anymatix directory
+          cd ..
+          $repoDir = Split-Path -Leaf $PWD
+          cd $repoDir
           Compress-Archive -Path anymatix -DestinationPath $zipPath -CompressionLevel Optimal
           # Report final archive size
           Get-Item $zipPath | Select-Object Length,Name
@@ -95,6 +99,7 @@ jobs:
         fi
         
         if [ -d "anymatix" ]; then
+          # Create zip with anymatix as the root directory
           zip -r -9 -q "$zipPath" anymatix
           # Report final archive size
           du -sh "$zipPath"
@@ -111,5 +116,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}
-        path: anymatix
-        compression-level: 9 
+        path: ${{ env.ZIP_PATH }} 

@@ -11,8 +11,8 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 
 2. **Minimal Installation Size**
    - Use Miniforge instead of Miniconda for smaller base installation
-   - Aggressive cleanup of unnecessary files
-   - Optimized compression with 7-Zip
+   - Smart cleanup of unnecessary files while preserving required dependencies
+   - Optimized compression with ZIP format
 
 3. **Version Management**
    - Version information stored in `version.yml`
@@ -32,7 +32,7 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 
 ### Cleanup Process
 
-The following cleanup steps are performed to minimize the installation size:
+The following cleanup steps are performed to minimize the installation size while ensuring functionality:
 
 1. Remove unnecessary directories:
    - `__pycache__`, `tests`, `test` directories
@@ -42,13 +42,21 @@ The following cleanup steps are performed to minimize the installation size:
 2. Remove conda package cache:
    - `pkgs/*`, `conda-meta/*.json`, `envs/`
 
-3. Remove unnecessary file types:
-   - `.a`, `.js.map`, `.h`, `.hpp`, `.c`, `.cpp`
+3. Selectively remove unnecessary file types:
+   - Static libraries (`.a`) and source maps (`.js.map`)
+   - Selectively remove header files (`.h`, `.hpp`) while preserving essential ones
+   - Preserve all dynamic libraries needed by packages
 
-4. Remove unused Python standard library modules:
-   - `idlelib`, `turtledemo`, `tkinter`, `ensurepip`, `distutils`, `lib2to3`, `unittest`
+4. Preserve dynamic library dependencies:
+   - Copy required `.dylibs` files to the appropriate locations
+   - Ensure PIL and other packages can find their native dependencies
+   - Maintain proper library paths for cross-platform compatibility
 
-5. Remove Git repositories:
+5. Remove unused Python standard library modules:
+   - `idlelib`, `turtledemo`, `tkinter`, `ensurepip`, `distutils`, `lib2to3`
+   - Preserve `unittest` and other modules required by PyTorch
+
+6. Remove Git repositories:
    - All `.git` directories from cloned repositories
 
 ### Package Installation
@@ -58,10 +66,11 @@ The following cleanup steps are performed to minimize the installation size:
   - `install_package.bat` for Windows
 - These scripts provide a simple interface to install additional packages
 
-### Compression
+### Compression and Artifact Structure
 
-- Using 7-Zip with optimal compression settings:
-  - `-t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0`
+- Using standard ZIP format with maximum compression for better compatibility
+- Artifact structure ensures the `anymatix` directory is at the root level
+- Consistent structure across all platforms (Windows, macOS, Linux)
 
 ### CI/CD Integration
 
@@ -76,8 +85,13 @@ The Python environment includes the following key dependencies:
 
 - PyTorch ecosystem (torch, torchvision, torchaudio)
 - Transformers and related libraries
-- Image processing libraries
+- Image processing libraries (PIL with all required native dependencies)
 - ComfyUI and custom nodes
+
+## Known Issues and Solutions
+
+- **Dynamic Library Dependencies**: The portable environment preserves all necessary dynamic libraries to ensure packages like PIL work correctly across platforms.
+- **Module Dependencies**: Some Python modules (like `unittest`) are preserved even during aggressive cleanup because they're required by packages like PyTorch.
 
 ## Future Improvements
 
