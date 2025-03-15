@@ -6,6 +6,29 @@ const https = require('https');
 const { execSync } = require('child_process');
 const os = require('os');
 
+// Read version from version.yml if it exists
+let version = '1.0.0';
+try {
+  if (fs.existsSync(path.join(__dirname, 'version.yml'))) {
+    try {
+      // Try to load js-yaml
+      const yaml = require('js-yaml');
+      const versionData = yaml.load(fs.readFileSync(path.join(__dirname, 'version.yml'), 'utf8'));
+      version = versionData.version || version;
+    } catch (yamlError) {
+      // Fallback to simple parsing if js-yaml is not available
+      const versionFileContent = fs.readFileSync(path.join(__dirname, 'version.yml'), 'utf8');
+      const versionMatch = versionFileContent.match(/version:\s*['"]?([^'"]+)['"]?/);
+      if (versionMatch && versionMatch[1]) {
+        version = versionMatch[1];
+      }
+    }
+    console.log(`Using version: ${version} from version.yml`);
+  }
+} catch (error) {
+  console.warn(`Warning: Could not read version from version.yml: ${error.message}`);
+}
+
 // Configuration
 const MINIFORGE_DIR = path.join(__dirname, 'anymatix', 'miniforge');
 const ANYMATIX_DIR = path.join(__dirname, 'anymatix');
@@ -63,18 +86,34 @@ function downloadFile(url, destination) {
   return new Promise((resolve, reject) => {
     console.log(`Downloading ${url}...`);
 
-    const file = fs.createWriteStream(destination);
+    let fileStream = null;
 
     // Function to handle HTTP requests with redirect support
     const makeRequest = (url) => {
+      // Close any existing file stream before creating a new one
+      if (fileStream) {
+        fileStream.close();
+      }
+
       const protocol = url.startsWith('https') ? https : require('http');
 
-      protocol.get(url, (response) => {
+      const options = new URL(url);
+
+      // Add user agent to avoid GitHub API rate limiting
+      const requestOptions = {
+        hostname: options.hostname,
+        path: options.pathname + options.search,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
+        }
+      };
+
+      protocol.get(requestOptions, (response) => {
         // Handle redirects
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          console.log(`Following redirect to: ${response.headers.location}`);
-          file.close();
-          makeRequest(response.headers.location);
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 307) {
+          const redirectUrl = response.headers.location;
+          console.log(`Following redirect to: ${redirectUrl}`);
+          makeRequest(redirectUrl);
           return;
         }
 
@@ -83,14 +122,33 @@ function downloadFile(url, destination) {
           return;
         }
 
-        response.pipe(file);
+        // Create a new file stream for the final destination
+        fileStream = fs.createWriteStream(destination);
 
-        file.on('finish', () => {
-          file.close();
-          console.log(`Download completed: ${destination}`);
-          resolve();
+        response.pipe(fileStream);
+
+        fileStream.on('finish', () => {
+          fileStream.close(() => {
+            // Verify the file was downloaded correctly
+            const stats = fs.statSync(destination);
+            if (stats.size === 0) {
+              reject(new Error(`Downloaded file is empty: ${destination}`));
+              return;
+            }
+
+            console.log(`Download completed: ${destination} (${stats.size} bytes)`);
+            resolve();
+          });
+        });
+
+        fileStream.on('error', (err) => {
+          fs.unlink(destination, () => { }); // Delete the file on error
+          reject(err);
         });
       }).on('error', (err) => {
+        if (fileStream) {
+          fileStream.close();
+        }
         fs.unlink(destination, () => { }); // Delete the file on error
         reject(err);
       });
@@ -175,6 +233,7 @@ async function main() {
 
     console.log('\nSetup completed successfully!');
     console.log(`Python with required packages installed at: ${MINIFORGE_DIR}`);
+    console.log(`Version: ${version}`);
 
   } catch (error) {
     console.error('Error:', error.message);

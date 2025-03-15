@@ -47,6 +47,16 @@ jobs:
       run: |
         brew install p7zip
 
+    - name: Create version.yml file
+      run: |
+        echo "version: '${{ env.RELEASE_VERSION }}'" > version.yml
+        cat version.yml
+
+    - name: Install dependencies
+      run: |
+        yarn init -y
+        yarn add js-yaml
+
     - name: Run setup script
       run: node setup-python-env.js
 
@@ -109,13 +119,16 @@ jobs:
           else
             du -sh anymatix
           fi
+        else
+          echo "Warning: anymatix/miniforge directory not found. Looking for other directories:"
+          find anymatix -type d -maxdepth 1
         fi
 
     - name: Create 7z archive (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $zipPath = "${{ env.ZIP_ROOT_NAME }}-windows.7z"
+        $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.7z"
         if (Test-Path -Path "anymatix") {
           7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 $zipPath anymatix
           # Report final archive size
@@ -131,15 +144,18 @@ jobs:
       shell: bash
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="${{ env.ZIP_ROOT_NAME }}-macos.7z"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-macos.7z"
         else
-          zipPath="${{ env.ZIP_ROOT_NAME }}-linux.7z"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-linux.7z"
         fi
         
         if [ -d "anymatix" ]; then
           7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 "$zipPath" anymatix
           # Report final archive size
           du -sh "$zipPath"
+          # Verify the archive contents
+          echo "Archive contents:"
+          7z l "$zipPath" | head -n 20
         else
           echo "Error: anymatix directory not found"
           exit 1
@@ -149,5 +165,5 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}
+        name: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}
         path: ${{ env.ZIP_PATH }} 
