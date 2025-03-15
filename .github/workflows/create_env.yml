@@ -61,37 +61,37 @@ jobs:
     - name: Clean up before zipping
       shell: bash
       run: |
-        if [ -d "anymatix/miniconda" ]; then
+        if [ -d "anymatix/miniforge" ]; then
           echo "Starting aggressive cleanup to reduce size..."
           
           # Remove unnecessary directories
-          find anymatix/miniconda -type d -name '__pycache__' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'tests' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'test' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name '__pycache__' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'tests' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'test' -exec rm -rf {} \; 2>/dev/null || true
           
           # Remove package info and documentation
-          find anymatix/miniconda -type d -name '*.dist-info' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name '*.egg-info' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'man' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'doc' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'docs' -exec rm -rf {} \; 2>/dev/null || true
-          find anymatix/miniconda -type d -name 'examples' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name '*.dist-info' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name '*.egg-info' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'man' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'doc' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'docs' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniforge -type d -name 'examples' -exec rm -rf {} \; 2>/dev/null || true
           
           # Remove conda package cache and unnecessary files
-          rm -rf anymatix/miniconda/pkgs/* 2>/dev/null || true
-          rm -rf anymatix/miniconda/conda-meta/*.json 2>/dev/null || true
-          rm -rf anymatix/miniconda/envs 2>/dev/null || true
+          rm -rf anymatix/miniforge/pkgs/* 2>/dev/null || true
+          rm -rf anymatix/miniforge/conda-meta/*.json 2>/dev/null || true
+          rm -rf anymatix/miniforge/envs 2>/dev/null || true
           
           # Remove unnecessary file types
-          find anymatix/miniconda -name "*.a" -delete 2>/dev/null || true
-          find anymatix/miniconda -name "*.js.map" -delete 2>/dev/null || true
-          find anymatix/miniconda -name "*.h" -delete 2>/dev/null || true
-          find anymatix/miniconda -name "*.hpp" -delete 2>/dev/null || true
-          find anymatix/miniconda -name "*.c" -delete 2>/dev/null || true
-          find anymatix/miniconda -name "*.cpp" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.a" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.js.map" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.h" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.hpp" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.c" -delete 2>/dev/null || true
+          find anymatix/miniforge -name "*.cpp" -delete 2>/dev/null || true
           
           # Remove unused Python standard library modules
-          for dir in anymatix/miniconda/lib/python*/; do
+          for dir in anymatix/miniforge/lib/python*/; do
             if [ -d "$dir" ]; then
               for module in idlelib turtledemo tkinter ensurepip distutils lib2to3 unittest; do
                 rm -rf "$dir/$module" 2>/dev/null || true

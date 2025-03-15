@@ -7,7 +7,7 @@ const { execSync } = require('child_process');
 const os = require('os');
 
 // Configuration
-const MINICONDA_DIR = path.join(__dirname, 'anymatix', 'miniconda');
+const MINIFORGE_DIR = path.join(__dirname, 'anymatix', 'miniforge');
 const ANYMATIX_DIR = path.join(__dirname, 'anymatix');
 const REQUIREMENTS_FILE = path.join(__dirname, 'requirements.txt');
 
@@ -28,27 +28,30 @@ function getPlatformInfo() {
   const platform = os.platform();
   const arch = os.arch();
 
-  // Use Miniconda slim versions for smaller footprint
+  // Use the recommended approach for downloading the latest Miniforge in a CI pipeline
+  // Following instructions from https://github.com/conda-forge/miniforge
   if (platform === 'darwin') {
-    // macOS
-    if (arch === 'arm64') {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh', installer: 'miniconda.sh' };
-    } else {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-x86_64.sh', installer: 'miniconda.sh' };
-    }
+    // macOS - use the latest version dynamically
+    return {
+      url: `https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-${arch === 'arm64' ? 'arm64' : 'x86_64'}.sh`,
+      installer: 'miniforge.sh'
+    };
   } else if (platform === 'linux') {
-    // Linux
-    if (arch === 'arm64' || arch === 'aarch64') {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh', installer: 'miniconda.sh' };
-    } else {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh', installer: 'miniconda.sh' };
-    }
+    // Linux - use the latest version dynamically
+    const linuxArch = arch === 'arm64' || arch === 'aarch64' ? 'aarch64' : 'x86_64';
+    return {
+      url: `https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${linuxArch}.sh`,
+      installer: 'miniforge.sh'
+    };
   } else if (platform === 'win32') {
-    // Windows
+    // Windows - use the latest version dynamically
     if (arch === 'x64') {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe', installer: 'miniconda.exe' };
+      return {
+        url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe',
+        installer: 'miniforge.exe'
+      };
     } else {
-      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86.exe', installer: 'miniconda.exe' };
+      throw new Error(`Unsupported architecture for Windows: ${arch}. Only x64 is supported.`);
     }
   }
 
@@ -61,23 +64,40 @@ function downloadFile(url, destination) {
     console.log(`Downloading ${url}...`);
 
     const file = fs.createWriteStream(destination);
-    https.get(url, (response) => {
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download: ${response.statusCode} ${response.statusMessage}`));
-        return;
-      }
 
-      response.pipe(file);
+    // Function to handle HTTP requests with redirect support
+    const makeRequest = (url) => {
+      const protocol = url.startsWith('https') ? https : require('http');
 
-      file.on('finish', () => {
-        file.close();
-        console.log(`Download completed: ${destination}`);
-        resolve();
+      protocol.get(url, (response) => {
+        // Handle redirects
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          console.log(`Following redirect to: ${response.headers.location}`);
+          file.close();
+          makeRequest(response.headers.location);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: ${response.statusCode} ${response.statusMessage}`));
+          return;
+        }
+
+        response.pipe(file);
+
+        file.on('finish', () => {
+          file.close();
+          console.log(`Download completed: ${destination}`);
+          resolve();
+        });
+      }).on('error', (err) => {
+        fs.unlink(destination, () => { }); // Delete the file on error
+        reject(err);
       });
-    }).on('error', (err) => {
-      fs.unlink(destination, () => { }); // Delete the file on error
-      reject(err);
-    });
+    };
+
+    // Start the request
+    makeRequest(url);
   });
 }
 
@@ -98,7 +118,7 @@ async function main() {
     const { url, installer } = getPlatformInfo();
     const installerPath = path.join(__dirname, installer);
 
-    // Download Miniconda installer
+    // Download Miniforge installer
     await downloadFile(url, installerPath);
 
     // Make installer executable (Unix only)
@@ -106,18 +126,18 @@ async function main() {
       execSync(`chmod +x ${installerPath}`);
     }
 
-    // Install Miniconda
-    console.log('Installing Miniconda (Miniforge slim version)...');
+    // Install Miniforge
+    console.log('Installing Miniforge...');
     if (os.platform() === 'win32') {
-      execSync(`start /wait "" ${installerPath} /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /NoRegistry=1 /U /S /D=${MINICONDA_DIR}`);
+      execSync(`start /wait "" ${installerPath} /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /NoRegistry=1 /U /S /D=${MINIFORGE_DIR}`);
     } else {
-      execSync(`bash ${installerPath} -u -b -p ${MINICONDA_DIR} --no-shortcuts`);
+      execSync(`bash ${installerPath} -u -b -p ${MINIFORGE_DIR}`);
     }
 
     // Create a minimal environment configuration
     const condaPath = os.platform() === 'win32'
-      ? path.join(MINICONDA_DIR, 'Scripts', 'conda.exe')
-      : path.join(MINICONDA_DIR, 'bin', 'conda');
+      ? path.join(MINIFORGE_DIR, 'Scripts', 'conda.exe')
+      : path.join(MINIFORGE_DIR, 'bin', 'conda');
 
     // Clean conda installation to save space
     console.log('Optimizing conda installation...');
@@ -126,8 +146,8 @@ async function main() {
     // Install requirements directly with minimal dependencies
     console.log('Installing requirements...');
     const pipPath = os.platform() === 'win32'
-      ? path.join(MINICONDA_DIR, 'Scripts', 'pip.exe')
-      : path.join(MINICONDA_DIR, 'bin', 'pip');
+      ? path.join(MINIFORGE_DIR, 'Scripts', 'pip.exe')
+      : path.join(MINIFORGE_DIR, 'bin', 'pip');
 
     execSync(`"${pipPath}" install --no-cache-dir --no-deps -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
 
@@ -154,7 +174,7 @@ async function main() {
     }
 
     console.log('\nSetup completed successfully!');
-    console.log(`Python with required packages installed at: ${MINICONDA_DIR}`);
+    console.log(`Python with required packages installed at: ${MINIFORGE_DIR}`);
 
   } catch (error) {
     console.error('Error:', error.message);
