@@ -73,7 +73,7 @@ jobs:
             hashSum.update(fileBuffer);
             return hashSum.digest('hex');
           } catch (err) {
-            console.error(`Error hashing file ${filePath}:`, err);
+            console.error('Error hashing file ' + filePath + ': ' + err.message);
             return 'error-hashing-file';
           }
         }
@@ -86,11 +86,14 @@ jobs:
         const enableCleanup = process.env.ENABLE_CLEANUP === 'true' ? '-cleanup' : '-nocleanup';
         
         // Create the cache key
-        const cacheKey = `anymatix-${platform}-${arch}-${requirementsHash.substring(0, 8)}-${setupScriptHash.substring(0, 8)}${enableCleanup}-v${process.env.RELEASE_VERSION}`;
-        console.log(`Cache key: ${cacheKey}`);
+        const cacheKey = 'anymatix-' + platform + '-' + arch + '-' + 
+                         requirementsHash.substring(0, 8) + '-' + 
+                         setupScriptHash.substring(0, 8) + 
+                         enableCleanup + '-v' + process.env.RELEASE_VERSION;
+        console.log('Cache key: ' + cacheKey);
         
         // Output for GitHub Actions
-        const output = `cache-key=${cacheKey}`;
+        const output = 'cache-key=' + cacheKey;
         if (process.env.GITHUB_OUTPUT) {
           fs.appendFileSync(process.env.GITHUB_OUTPUT, output + '\\n');
         } else {

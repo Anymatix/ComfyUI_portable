@@ -271,6 +271,89 @@ function deleteFolderRecursive(folderPath) {
   }
 }
 
+// Function to ensure PIL can find its dynamic libraries
+async function setupPILDynamicLibraries() {
+  console.log('Setting up PIL dynamic libraries...');
+
+  // Find the PIL directory
+  const sitePackagesDir = path.join(MINIFORGE_DIR, 'lib', 'python*', 'site-packages');
+  const sitePackagesDirs = await promisifiedGlob(sitePackagesDir);
+
+  for (const dir of sitePackagesDirs) {
+    const pilDir = path.join(dir, 'PIL');
+    if (fs.existsSync(pilDir)) {
+      // Create .dylibs directory if it doesn't exist
+      const dylibsDir = path.join(pilDir, '.dylibs');
+      if (!fs.existsSync(dylibsDir)) {
+        fs.mkdirSync(dylibsDir, { recursive: true });
+      }
+
+      // Copy necessary dynamic libraries to PIL/.dylibs
+      const libDir = path.join(MINIFORGE_DIR, 'lib');
+      if (fs.existsSync(libDir)) {
+        // Platform-specific handling
+        if (os.platform() === 'darwin') {
+          // On macOS, copy all dylibs as they're typically smaller
+          const dylibPatterns = ['*.dylib'];
+          for (const pattern of dylibPatterns) {
+            const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+            for (const libFile of libFiles) {
+              const destFile = path.join(dylibsDir, path.basename(libFile));
+              console.log(`Copying ${libFile} to ${destFile}`);
+              fs.copyFileSync(libFile, destFile);
+            }
+          }
+        } else if (os.platform() === 'linux') {
+          // On Linux, only copy essential libraries to avoid massive size
+          // List of essential libraries for PIL on Linux
+          const essentialLibs = [
+            'libz.so*',
+            'libjpeg.so*',
+            'libpng.so*',
+            'libtiff.so*',
+            'libfreetype.so*',
+            'liblcms2.so*',
+            'libwebp.so*',
+            'libopenjp2.so*'
+          ];
+
+          for (const pattern of essentialLibs) {
+            const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+            for (const libFile of libFiles) {
+              const destFile = path.join(dylibsDir, path.basename(libFile));
+              console.log(`Copying essential library: ${libFile} to ${destFile}`);
+              fs.copyFileSync(libFile, destFile);
+            }
+          }
+
+          // Create a symbolic link for LD_LIBRARY_PATH to find the libraries
+          const ldConfigPath = path.join(ANYMATIX_DIR, 'set_library_path.sh');
+          const ldConfigContent = `#!/bin/bash
+# Add the library directory to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="${libDir}:$LD_LIBRARY_PATH"
+# Execute the command passed as arguments
+exec "$@"
+`;
+          fs.writeFileSync(ldConfigPath, ldConfigContent);
+          execSync(`chmod +x ${ldConfigPath}`);
+          console.log(`Created ${ldConfigPath} to help find libraries at runtime`);
+        } else if (os.platform() === 'win32') {
+          // On Windows, copy all DLLs
+          const dllPatterns = ['*.dll'];
+          for (const pattern of dllPatterns) {
+            const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+            for (const libFile of libFiles) {
+              const destFile = path.join(dylibsDir, path.basename(libFile));
+              console.log(`Copying ${libFile} to ${destFile}`);
+              fs.copyFileSync(libFile, destFile);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // Cross-platform cleanup function
 async function cleanupEnvironment() {
   console.log('Starting minimal cleanup to preserve full functionality...');
@@ -351,91 +434,6 @@ async function cleanupEnvironment() {
         }
       }
     }
-
-    // Ensure PIL can find its dynamic libraries
-    console.log('Ensuring PIL can find its dynamic libraries...');
-
-    // Find the PIL directory
-    const sitePackagesDir = path.join(MINIFORGE_DIR, 'lib', 'python*', 'site-packages');
-    const sitePackagesDirs = await promisifiedGlob(sitePackagesDir);
-
-    for (const dir of sitePackagesDirs) {
-      const pilDir = path.join(dir, 'PIL');
-      if (fs.existsSync(pilDir)) {
-        // Create .dylibs directory if it doesn't exist
-        const dylibsDir = path.join(pilDir, '.dylibs');
-        if (!fs.existsSync(dylibsDir)) {
-          fs.mkdirSync(dylibsDir, { recursive: true });
-        }
-
-        // Copy only necessary dynamic libraries to PIL/.dylibs
-        // This is a more selective approach to avoid the 12GB Linux size
-        const libDir = path.join(MINIFORGE_DIR, 'lib');
-        if (fs.existsSync(libDir)) {
-          // Platform-specific handling
-          if (os.platform() === 'darwin') {
-            // On macOS, copy all dylibs as they're typically smaller
-            const dylibPatterns = ['*.dylib'];
-            for (const pattern of dylibPatterns) {
-              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
-              for (const libFile of libFiles) {
-                const destFile = path.join(dylibsDir, path.basename(libFile));
-                console.log(`Copying ${libFile} to ${destFile}`);
-                fs.copyFileSync(libFile, destFile);
-              }
-            }
-          } else if (os.platform() === 'linux') {
-            // On Linux, only copy essential libraries to avoid massive size
-            // List of essential libraries for PIL on Linux
-            const essentialLibs = [
-              'libz.so*',
-              'libjpeg.so*',
-              'libpng.so*',
-              'libtiff.so*',
-              'libfreetype.so*',
-              'liblcms2.so*',
-              'libwebp.so*',
-              'libopenjp2.so*'
-            ];
-
-            for (const pattern of essentialLibs) {
-              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
-              for (const libFile of libFiles) {
-                const destFile = path.join(dylibsDir, path.basename(libFile));
-                console.log(`Copying essential library: ${libFile} to ${destFile}`);
-                fs.copyFileSync(libFile, destFile);
-              }
-            }
-
-            // Create a symbolic link for LD_LIBRARY_PATH to find the libraries
-            const ldConfigPath = path.join(ANYMATIX_DIR, 'set_library_path.sh');
-            const ldConfigContent = `#!/bin/bash
-# Add the library directory to LD_LIBRARY_PATH
-export LD_LIBRARY_PATH="${libDir}:$LD_LIBRARY_PATH"
-# Execute the command passed as arguments
-exec "$@"
-`;
-            fs.writeFileSync(ldConfigPath, ldConfigContent);
-            execSync(`chmod +x ${ldConfigPath}`);
-            console.log(`Created ${ldConfigPath} to help find libraries at runtime`);
-          } else if (os.platform() === 'win32') {
-            // On Windows, copy all DLLs
-            const dllPatterns = ['*.dll'];
-            for (const pattern of dllPatterns) {
-              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
-              for (const libFile of libFiles) {
-                const destFile = path.join(dylibsDir, path.basename(libFile));
-                console.log(`Copying ${libFile} to ${destFile}`);
-                fs.copyFileSync(libFile, destFile);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // DO NOT remove any Python standard library modules
-    console.log('Preserving all Python standard library modules...');
 
     // Report size after cleanup
     console.log('Size after cleanup:');
@@ -547,6 +545,9 @@ async function main() {
       console.log(`Cloning ${repoName}...`);
       execSync(`git clone --depth=1 ${repo.url} ${path.join(customNodesPath, repoName)}`);
     }
+
+    // Always set up PIL dynamic libraries, regardless of cleanup setting
+    await setupPILDynamicLibraries();
 
     // Run the cleanup process only if enabled
     if (enableCleanup) {
