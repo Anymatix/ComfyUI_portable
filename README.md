@@ -15,7 +15,7 @@ The setup script (`setup-python-env.js`) performs the following tasks:
 1. Downloads and installs Miniforge (a minimal Conda distribution)
 2. Installs all required Python packages from `requirements.txt`
 3. Clones the ComfyUI repository and custom nodes
-4. Performs a minimal cleanup to optimize size while preserving functionality
+4. Optionally performs a minimal cleanup to optimize size (disabled by default to ensure full functionality)
 
 ## Platform-Specific Library Handling
 
@@ -34,15 +34,30 @@ cd anymatix
 ./set_library_path.sh ./ComfyUI/main.py
 ```
 
-## Cleanup Process
+## Cleanup Process (Optional)
 
-The cleanup process is designed to be minimal and preserve full functionality:
+The cleanup process is now **disabled by default** to ensure full functionality. It can be enabled with the `--enable-cleanup=true` flag when running the setup script, but this may cause issues with some libraries like PIL.
+
+When enabled, the cleanup process:
 
 - Removes unnecessary directories like `__pycache__`, `man`, `doc`, `docs`, and `examples`
 - Preserves all NumPy and SciPy test directories to ensure proper functionality
 - Removes conda package cache and environments
 - Preserves all dynamic libraries needed for operation
 - Only removes static libraries (`.a` files) which are not needed at runtime
+
+## CI/CD Workflow
+
+The GitHub Actions workflow includes a comprehensive caching system to speed up builds:
+
+- **Cache Key Generation**: SHA256 hashes of `requirements.txt` and `setup-python-env.js` are used to create unique cache keys
+- **Directory Caching**: The `anymatix` directory is cached to avoid rebuilding when inputs haven't changed
+- **Artifact Caching**: The final zip file is also cached for faster artifact generation
+- **Force Rebuild**: You can force a rebuild by setting the `force_rebuild` input parameter to `true`
+- **Optional Cleanup**: The cleanup process can be enabled with the `enable_cleanup` input parameter (default: `false`)
+- **Restore Keys**: Fallback cache keys are provided to maximize cache hits even when specific versions change
+
+This caching system significantly reduces build times when there are no changes to the core files, while ensuring that any changes to the requirements or setup script will trigger a fresh build.
 
 ## Artifact Structure
 
@@ -55,6 +70,7 @@ GitHub Actions artifacts directly contain the `anymatix` directory, ensuring a c
 
 - **macOS Security**: The first run of the Python executable might be blocked by macOS security. Right-click on the executable and select "Open" to bypass this.
 - **Linux Library Path**: On Linux, use the provided `set_library_path.sh` script to ensure all libraries are found correctly.
+- **PIL Library Issues**: If you encounter errors with PIL libraries not being found (e.g., `libtiff.6.dylib`), ensure you're using the setup with cleanup disabled (default behavior).
 
 ## Development
 
@@ -62,6 +78,18 @@ To install additional packages, use the provided helper scripts:
 
 - Windows: `install_package.bat package_name`
 - macOS/Linux: `./install_package.sh package_name`
+
+### Running the Setup Script Manually
+
+To run the setup script manually with specific options:
+
+```bash
+# Default setup (no cleanup)
+node setup-python-env.js
+
+# Enable cleanup (may cause issues with some libraries)
+node setup-python-env.js --enable-cleanup=true
+```
 
 ## License
 

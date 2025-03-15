@@ -11,6 +11,14 @@ on:
         description: 'Release version (default: 1.0.0)'
         required: false
         default: '1.0.0'
+      force_rebuild:
+        description: 'Force rebuild ignoring cache (true/false)'
+        required: false
+        default: 'false'
+      enable_cleanup:
+        description: 'Enable miniforge cleanup (WARNING: may break functionality)'
+        required: false
+        default: 'false'
 
 jobs:
   build:
@@ -21,6 +29,8 @@ jobs:
     env:
       ZIP_ROOT_NAME: ${{ github.event.inputs.zip_root_name || 'anymatix-comfyui-portable' }}
       RELEASE_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
+      FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
+      ENABLE_CLEANUP: ${{ github.event.inputs.enable_cleanup || 'false' }}
 
     steps:
     - name: Checkout code
@@ -30,6 +40,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'yarn'
 
     - name: Install dependencies
       run: |
@@ -46,16 +57,92 @@ jobs:
         echo "version: '${{ env.RELEASE_VERSION }}'" > version.yml
         cat version.yml
 
+    - name: Generate cache key
+      id: cache-key
+      run: |
+        node -e "
+        const fs = require('fs');
+        const crypto = require('crypto');
+        const os = require('os');
+        
+        // Calculate SHA256 hash of a file
+        function calculateFileHash(filePath) {
+          try {
+            const fileBuffer = fs.readFileSync(filePath);
+            const hashSum = crypto.createHash('sha256');
+            hashSum.update(fileBuffer);
+            return hashSum.digest('hex');
+          } catch (err) {
+            console.error(`Error hashing file ${filePath}:`, err);
+            return 'error-hashing-file';
+          }
+        }
+        
+        // Generate cache key components
+        const requirementsHash = calculateFileHash('requirements.txt');
+        const setupScriptHash = calculateFileHash('setup-python-env.js');
+        const platform = os.platform();
+        const arch = os.arch();
+        const enableCleanup = process.env.ENABLE_CLEANUP === 'true' ? '-cleanup' : '-nocleanup';
+        
+        // Create the cache key
+        const cacheKey = `anymatix-${platform}-${arch}-${requirementsHash.substring(0, 8)}-${setupScriptHash.substring(0, 8)}${enableCleanup}-v${process.env.RELEASE_VERSION}`;
+        console.log(`Cache key: ${cacheKey}`);
+        
+        // Output for GitHub Actions
+        const output = `cache-key=${cacheKey}`;
+        if (process.env.GITHUB_OUTPUT) {
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, output + '\\n');
+        } else {
+          console.log('GITHUB_OUTPUT not set, output:', output);
+        }
+        "
+      shell: bash
+
+    # Cache the anymatix directory
+    - name: Cache anymatix directory
+      id: cache-anymatix
+      if: env.FORCE_REBUILD != 'true'
+      uses: actions/cache@v4
+      with:
+        path: anymatix
+        key: ${{ steps.cache-key.outputs.cache-key }}
+        restore-keys: |
+          anymatix-${{ runner.os }}-${{ runner.arch }}-
+
+    # Run setup script if cache miss or force rebuild
     - name: Run setup script
-      run: node setup-python-env.js
+      if: steps.cache-anymatix.outputs.cache-hit != 'true' || env.FORCE_REBUILD == 'true'
+      run: node setup-python-env.js --enable-cleanup=${{ env.ENABLE_CLEANUP }}
 
     - name: List directories (Unix)
       if: runner.os != 'Windows'
-      run: ls -la
+      run: ls -la anymatix
 
     - name: List directories (Windows)
       if: runner.os == 'Windows'
-      run: Get-ChildItem -Force
+      run: Get-ChildItem -Force anymatix
+
+    # Create a zip file for caching
+    - name: Create zip file
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          powershell -Command "Compress-Archive -Path anymatix -DestinationPath ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip -Force"
+        else
+          zip -r ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip anymatix
+        fi
+      shell: bash
+
+    # Cache the zip file
+    - name: Cache zip file
+      id: cache-zip
+      if: env.FORCE_REBUILD != 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip
+        key: ${{ steps.cache-key.outputs.cache-key }}-zip
+        restore-keys: |
+          anymatix-${{ runner.os }}-${{ runner.arch }}-zip-
 
     # Create a release artifact with the anymatix directory
     - name: Create release artifact

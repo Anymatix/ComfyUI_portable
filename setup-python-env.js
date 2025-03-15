@@ -8,6 +8,16 @@ const os = require('os');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const enableCleanup = args.some(arg =>
+  arg === '--enable-cleanup=true' ||
+  arg === '--enable-cleanup' ||
+  arg === '-c'
+);
+
+console.log(`Cleanup ${enableCleanup ? 'enabled' : 'disabled'}`);
+
 // Handle glob package differences between versions
 const glob = require('glob');
 let promisifiedGlob;
@@ -538,9 +548,13 @@ async function main() {
       execSync(`git clone --depth=1 ${repo.url} ${path.join(customNodesPath, repoName)}`);
     }
 
-    // Run the cleanup process
-    console.log('Running cleanup process...');
-    await cleanupEnvironment();
+    // Run the cleanup process only if enabled
+    if (enableCleanup) {
+      console.log('Running cleanup process...');
+      await cleanupEnvironment();
+    } else {
+      console.log('Skipping cleanup process (disabled by default to preserve full functionality)');
+    }
 
     // Create helper scripts for package installation
     createPackageInstallationScripts();
