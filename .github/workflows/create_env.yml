@@ -55,7 +55,8 @@ jobs:
     - name: Install dependencies
       run: |
         yarn init -y
-        yarn add js-yaml glob
+        # Use specific versions to avoid compatibility issues
+        yarn add js-yaml@4.1.0 glob@7.2.3
 
     - name: Run setup script
       run: node setup-python-env.js

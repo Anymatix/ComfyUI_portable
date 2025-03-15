@@ -7,8 +7,89 @@ const { execSync, exec } = require('child_process');
 const os = require('os');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+
+// Handle glob package differences between versions
 const glob = require('glob');
-const promisifiedGlob = promisify(glob);
+let promisifiedGlob;
+
+// Try different approaches to get a promisified glob function
+try {
+  // For glob v8+
+  if (typeof glob.glob === 'function') {
+    promisifiedGlob = promisify(glob.glob);
+  }
+  // For glob v7 and below
+  else if (typeof glob === 'function') {
+    promisifiedGlob = promisify(glob);
+  }
+  // Fallback implementation if promisification fails
+  else {
+    promisifiedGlob = (pattern, options) => {
+      return new Promise((resolve, reject) => {
+        glob(pattern, options, (err, files) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(files);
+          }
+        });
+      });
+    };
+  }
+} catch (error) {
+  // Final fallback using fs.readdir and path filtering
+  console.warn(`Warning: Error setting up glob: ${error.message}. Using fallback implementation.`);
+  promisifiedGlob = async (pattern, options) => {
+    // Simple pattern matching for common glob patterns
+    const dir = path.dirname(pattern);
+    const basename = path.basename(pattern);
+    const isRecursive = pattern.includes('**');
+
+    // Helper function to recursively list files
+    const listFilesRecursively = async (directory) => {
+      let results = [];
+      const entries = fs.readdirSync(directory, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(directory, entry.name);
+
+        if (entry.isDirectory() && isRecursive) {
+          results = results.concat(await listFilesRecursively(fullPath));
+        } else if (entry.isFile()) {
+          results.push(fullPath);
+        }
+      }
+
+      return results;
+    };
+
+    try {
+      let files;
+      if (isRecursive) {
+        files = await listFilesRecursively(dir);
+      } else {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        files = entries
+          .filter(entry => entry.isFile())
+          .map(entry => path.join(dir, entry.name));
+      }
+
+      // Simple pattern matching
+      return files.filter(file => {
+        const filename = path.basename(file);
+        if (basename === '*') return true;
+        if (basename.startsWith('*.')) {
+          const ext = basename.substring(1);
+          return filename.endsWith(ext);
+        }
+        return filename === basename;
+      });
+    } catch (err) {
+      console.error(`Error in fallback glob implementation: ${err.message}`);
+      return [];
+    }
+  };
+}
 
 // Read version from version.yml if it exists
 let version = '1.0.0';
