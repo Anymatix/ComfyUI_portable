@@ -28,26 +28,27 @@ function getPlatformInfo() {
   const platform = os.platform();
   const arch = os.arch();
 
+  // Use Miniconda slim versions for smaller footprint
   if (platform === 'darwin') {
     // macOS
     if (arch === 'arm64') {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh', installer: 'miniconda.sh' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-arm64.sh', installer: 'miniconda.sh' };
     } else {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh', installer: 'miniconda.sh' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-x86_64.sh', installer: 'miniconda.sh' };
     }
   } else if (platform === 'linux') {
     // Linux
     if (arch === 'arm64' || arch === 'aarch64') {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh', installer: 'miniconda.sh' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh', installer: 'miniconda.sh' };
     } else {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh', installer: 'miniconda.sh' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh', installer: 'miniconda.sh' };
     }
   } else if (platform === 'win32') {
     // Windows
     if (arch === 'x64') {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe', installer: 'miniconda.exe' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe', installer: 'miniconda.exe' };
     } else {
-      return { url: 'https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86.exe', installer: 'miniconda.exe' };
+      return { url: 'https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86.exe', installer: 'miniconda.exe' };
     }
   }
 
@@ -106,29 +107,41 @@ async function main() {
     }
 
     // Install Miniconda
-    console.log('Installing Miniconda...');
+    console.log('Installing Miniconda (Miniforge slim version)...');
     if (os.platform() === 'win32') {
-      execSync(`start /wait "" ${installerPath} /InstallationType=JustMe /RegisterPython=0 /U /S /D=${MINICONDA_DIR}`);
+      execSync(`start /wait "" ${installerPath} /InstallationType=JustMe /RegisterPython=0 /AddToPath=0 /NoRegistry=1 /U /S /D=${MINICONDA_DIR}`);
     } else {
-      execSync(`bash ${installerPath} -u -b -p ${MINICONDA_DIR}`);
+      execSync(`bash ${installerPath} -u -b -p ${MINICONDA_DIR} --no-shortcuts`);
     }
 
-    // Install requirements directly into Miniconda's base environment
+    // Create a minimal environment configuration
+    const condaPath = os.platform() === 'win32'
+      ? path.join(MINICONDA_DIR, 'Scripts', 'conda.exe')
+      : path.join(MINICONDA_DIR, 'bin', 'conda');
+
+    // Clean conda installation to save space
+    console.log('Optimizing conda installation...');
+    execSync(`"${condaPath}" clean -a -y`, { stdio: 'inherit' });
+
+    // Install requirements directly with minimal dependencies
     console.log('Installing requirements...');
     const pipPath = os.platform() === 'win32'
       ? path.join(MINICONDA_DIR, 'Scripts', 'pip.exe')
       : path.join(MINICONDA_DIR, 'bin', 'pip');
 
-    execSync(`"${pipPath}" install -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
+    execSync(`"${pipPath}" install --no-cache-dir --no-deps -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
+
+    // Install only essential dependencies
+    execSync(`"${pipPath}" install --no-cache-dir --only-binary=:all: -r "${REQUIREMENTS_FILE}"`, { stdio: 'inherit' });
 
     // Clean up installer
     fs.unlinkSync(installerPath);
 
-    // Clone comfy_repo
+    // Clone comfy_repo with minimal depth to save space
     console.log('Cloning ComfyUI repository...');
-    execSync(`git clone -b ${comfy_repo.branch} ${comfy_repo.url} ${path.join(ANYMATIX_DIR, 'ComfyUI')}`);
+    execSync(`git clone --depth=1 -b ${comfy_repo.branch} ${comfy_repo.url} ${path.join(ANYMATIX_DIR, 'ComfyUI')}`);
 
-    // Clone additional repos into custom_nodes
+    // Clone additional repos into custom_nodes with minimal depth
     const customNodesPath = path.join(ANYMATIX_DIR, 'ComfyUI', 'custom_nodes');
     if (!fs.existsSync(customNodesPath)) {
       fs.mkdirSync(customNodesPath, { recursive: true });
@@ -137,7 +150,7 @@ async function main() {
     for (const repo of repos) {
       const repoName = repo.url.split('/').pop().replace('.git', '');
       console.log(`Cloning ${repoName}...`);
-      execSync(`git clone ${repo.url} ${path.join(customNodesPath, repoName)}`);
+      execSync(`git clone --depth=1 ${repo.url} ${path.join(customNodesPath, repoName)}`);
     }
 
     console.log('\nSetup completed successfully!');

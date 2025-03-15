@@ -31,6 +31,22 @@ jobs:
       with:
         node-version: '18'
 
+    - name: Install 7-Zip (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install 7zip -y
+
+    - name: Install 7-Zip (Ubuntu)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y p7zip-full
+
+    - name: Install 7-Zip (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install p7zip
+
     - name: Run setup script
       run: node setup-python-env.js
 
@@ -46,49 +62,84 @@ jobs:
       shell: bash
       run: |
         if [ -d "anymatix/miniconda" ]; then
-          # Remove unnecessary files
-          find anymatix/miniconda -type d -name '__pycache__' -exec rm -rf {} +
-          find anymatix/miniconda -type d -name 'tests' -exec rm -rf {} +
-          find anymatix/miniconda -type d -name 'test' -exec rm -rf {} +
-          find anymatix/miniconda -type d -name '*.dist-info' -exec rm -rf {} +
-          find anymatix/miniconda -type d -name '*.egg-info' -exec rm -rf {} +
+          echo "Starting aggressive cleanup to reduce size..."
           
-          # Remove documentation files
-          find anymatix/miniconda -type f -name '*.pyc' -delete
-          find anymatix/miniconda -type f -name '*.pyo' -delete
-          find anymatix/miniconda -type f -name '*.pyd' -delete
-          find anymatix/miniconda -type f -name '*.so' -delete
+          # Remove unnecessary directories
+          find anymatix/miniconda -type d -name '__pycache__' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'tests' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'test' -exec rm -rf {} \; 2>/dev/null || true
+          
+          # Remove package info and documentation
+          find anymatix/miniconda -type d -name '*.dist-info' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name '*.egg-info' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'man' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'doc' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'docs' -exec rm -rf {} \; 2>/dev/null || true
+          find anymatix/miniconda -type d -name 'examples' -exec rm -rf {} \; 2>/dev/null || true
+          
+          # Remove conda package cache and unnecessary files
+          rm -rf anymatix/miniconda/pkgs/* 2>/dev/null || true
+          rm -rf anymatix/miniconda/conda-meta/*.json 2>/dev/null || true
+          rm -rf anymatix/miniconda/envs 2>/dev/null || true
+          
+          # Remove unnecessary file types
+          find anymatix/miniconda -name "*.a" -delete 2>/dev/null || true
+          find anymatix/miniconda -name "*.js.map" -delete 2>/dev/null || true
+          find anymatix/miniconda -name "*.h" -delete 2>/dev/null || true
+          find anymatix/miniconda -name "*.hpp" -delete 2>/dev/null || true
+          find anymatix/miniconda -name "*.c" -delete 2>/dev/null || true
+          find anymatix/miniconda -name "*.cpp" -delete 2>/dev/null || true
+          
+          # Remove unused Python standard library modules
+          for dir in anymatix/miniconda/lib/python*/; do
+            if [ -d "$dir" ]; then
+              for module in idlelib turtledemo tkinter ensurepip distutils lib2to3 unittest; do
+                rm -rf "$dir/$module" 2>/dev/null || true
+              done
+            fi
+          done
+          
+          # Remove .git directories from cloned repositories
+          find anymatix -type d -name '.git' -exec rm -rf {} \; 2>/dev/null || true
+          
+          # Report size after cleanup
+          echo "Size after cleanup:"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            powershell -Command "Get-ChildItem -Path anymatix -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum"
+          else
+            du -sh anymatix
+          fi
         fi
 
-    - name: Zip anymatix directory (Windows)
+    - name: Create 7z archive (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $zipPath = "${{ env.ZIP_ROOT_NAME }}-windows.zip"
+        $zipPath = "${{ env.ZIP_ROOT_NAME }}-windows.7z"
         if (Test-Path -Path "anymatix") {
-          Push-Location -Path "anymatix"
-          Compress-Archive -Path "." -DestinationPath "../$zipPath" -CompressionLevel Optimal
-          Pop-Location
+          7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 $zipPath anymatix
+          # Report final archive size
+          Get-Item $zipPath | Select-Object Length,Name
         } else {
           Write-Error "Error: anymatix directory not found"
           exit 1
         }
         echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
 
-    - name: Zip anymatix directory (Unix)
+    - name: Create 7z archive (Unix)
       if: runner.os != 'Windows'
       shell: bash
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="${{ env.ZIP_ROOT_NAME }}-macos.zip"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-macos.7z"
         else
-          zipPath="${{ env.ZIP_ROOT_NAME }}-linux.zip"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-linux.7z"
         fi
         
         if [ -d "anymatix" ]; then
-          cd anymatix
-          zip -r -9 ../$zipPath . -x "*.git*" "*.DS_Store*"
-          cd ..
+          7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 "$zipPath" anymatix
+          # Report final archive size
+          du -sh "$zipPath"
         else
           echo "Error: anymatix directory not found"
           exit 1
@@ -99,4 +150,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-${{ runner.os }}
-        path: ${{ env.ZIP_PATH }}
+        path: ${{ env.ZIP_PATH }} 
