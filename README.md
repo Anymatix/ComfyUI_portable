@@ -7,12 +7,12 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 1. **Multi-platform Support**
    - Windows, macOS, and Linux compatibility
    - Architecture-specific builds (x86_64, arm64/aarch64)
-   - Cross-platform cleanup process using Node.js
+   - Cross-platform setup process using Node.js
 
 2. **Minimal Installation Size**
    - Use Miniforge instead of Miniconda for smaller base installation
-   - Balanced cleanup approach that preserves functionality while reducing size
-   - Optimized compression with standard ZIP format
+   - Minimal cleanup approach that prioritizes functionality over size
+   - Direct artifact download without nested compression
 
 3. **Version Management**
    - Version information stored in `version.yml`
@@ -32,14 +32,15 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 
 ### Cleanup Process
 
-The following cleanup steps are performed to balance size reduction with functionality:
+The following minimal cleanup steps are performed to preserve full functionality:
 
-1. Remove unnecessary directories:
-   - `__pycache__`, `tests`, `test` directories
+1. Remove only non-essential directories:
+   - `__pycache__` directories
    - Documentation (`man`, `doc`, `docs`, `examples`)
+   - Preserves all test directories and modules
 
-2. Preserve package metadata for critical packages:
-   - Metadata for packages like `tqdm`, `transformers`, `torch`, etc. is preserved
+2. Preserve all package metadata:
+   - All `.dist-info` and `.egg-info` directories are preserved
    - This ensures proper package version detection and dependency resolution
 
 3. Remove conda package cache:
@@ -50,13 +51,13 @@ The following cleanup steps are performed to balance size reduction with functio
    - Dynamic libraries are copied to the appropriate locations for PIL
    - No removal of any shared libraries to ensure all dependencies are available
 
-5. Remove only static libraries and source maps:
-   - Static libraries (`.a`) and source maps (`.js.map`) are removed
-   - Header files are preserved to maintain compatibility
+5. Remove only static libraries:
+   - Only static libraries (`.a`) are removed
+   - All other files are preserved to maintain compatibility
 
-6. Remove only non-essential Python standard library modules:
-   - Only `idlelib`, `turtledemo`, and `tkinter` are removed
-   - All other modules are preserved to ensure compatibility
+6. Preserve all Python standard library modules:
+   - No Python modules are removed
+   - All standard library functionality is preserved
 
 7. Remove Git repositories:
    - All `.git` directories from cloned repositories
@@ -70,10 +71,11 @@ The following cleanup steps are performed to balance size reduction with functio
 
 ### Artifact Structure
 
-- ZIP files contain the `anymatix` directory as the root
-- When extracted, the `anymatix` directory contains:
+- GitHub Actions artifacts directly contain the `anymatix` directory
+- When downloaded and extracted, the `anymatix` directory contains:
   - `ComfyUI`: The ComfyUI application
   - `miniforge`: The Python environment with all dependencies
+- No nested zip files or additional extraction steps required
 - Consistent structure across all platforms (Windows, macOS, Linux)
 
 ### CI/CD Integration

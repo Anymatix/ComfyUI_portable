@@ -31,32 +31,16 @@ jobs:
       with:
         node-version: '20'
 
-    - name: Install 7-Zip (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install 7zip -y
-
-    - name: Install 7-Zip (Ubuntu)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y p7zip-full
-
-    - name: Install 7-Zip (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install p7zip
-
-    - name: Create version.yml file
-      run: |
-        echo "version: '${{ env.RELEASE_VERSION }}'" > version.yml
-        cat version.yml
-
     - name: Install dependencies
       run: |
         yarn init -y
         # Use specific versions to avoid compatibility issues
         yarn add js-yaml@4.1.0 glob@7.2.3
+
+    - name: Create version.yml file
+      run: |
+        echo "version: '${{ env.RELEASE_VERSION }}'" > version.yml
+        cat version.yml
 
     - name: Run setup script
       run: node setup-python-env.js
@@ -69,49 +53,10 @@ jobs:
       if: runner.os == 'Windows'
       run: Get-ChildItem -Force
 
-    # Create a zip file with the anymatix directory structure
-    - name: Create zip archive (Windows)
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.zip"
-        if (Test-Path -Path "anymatix") {
-          Compress-Archive -Path anymatix -DestinationPath $zipPath -CompressionLevel Optimal
-          # Report final archive size
-          Get-Item $zipPath | Select-Object Length,Name
-        } else {
-          Write-Error "Error: anymatix directory not found"
-          exit 1
-        }
-        echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
-
-    - name: Create zip archive (Unix)
-      if: runner.os != 'Windows'
-      shell: bash
-      run: |
-        if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-macos.zip"
-        else
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-linux.zip"
-        fi
-        
-        if [ -d "anymatix" ]; then
-          # Create zip with anymatix as the root directory
-          zip -r -9 -q "$zipPath" anymatix
-          # Report final archive size
-          du -sh "$zipPath"
-          # Verify the archive contents
-          echo "Archive contents:"
-          unzip -l "$zipPath" | head -n 20
-        else
-          echo "Error: anymatix directory not found"
-          exit 1
-        fi
-        echo "ZIP_PATH=$zipPath" >> $GITHUB_ENV
-
-    # Upload the zip file as an artifact
-    - name: Upload artifact
+    # Create a release artifact with the anymatix directory
+    - name: Create release artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}
-        path: ${{ env.ZIP_PATH }} 
+        path: anymatix/
+        compression-level: 0 

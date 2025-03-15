@@ -263,7 +263,7 @@ function deleteFolderRecursive(folderPath) {
 
 // Cross-platform cleanup function
 async function cleanupEnvironment() {
-  console.log('Starting cleanup to reduce size while preserving functionality...');
+  console.log('Starting minimal cleanup to preserve full functionality...');
 
   if (!fs.existsSync(MINIFORGE_DIR)) {
     console.warn(`Warning: ${MINIFORGE_DIR} directory not found. Looking for other directories:`);
@@ -279,11 +279,9 @@ async function cleanupEnvironment() {
   }
 
   try {
-    // Define patterns to find directories to remove
+    // Define patterns to find directories to remove - be very selective
     const directoryPatterns = [
       path.join(MINIFORGE_DIR, '**', '__pycache__'),
-      path.join(MINIFORGE_DIR, '**', 'tests'),
-      path.join(MINIFORGE_DIR, '**', 'test'),
       path.join(MINIFORGE_DIR, '**', 'man'),
       path.join(MINIFORGE_DIR, '**', 'doc'),
       path.join(MINIFORGE_DIR, '**', 'docs'),
@@ -295,6 +293,12 @@ async function cleanupEnvironment() {
     for (const pattern of directoryPatterns) {
       const matches = await promisifiedGlob(pattern, { nodir: false });
       for (const match of matches) {
+        // Skip any NumPy directories
+        if (match.includes('numpy') || match.includes('scipy')) {
+          console.log(`Preserving directory: ${match}`);
+          continue;
+        }
+
         if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
           console.log(`Removing directory: ${match}`);
           deleteFolderRecursive(match);
@@ -302,32 +306,8 @@ async function cleanupEnvironment() {
       }
     }
 
-    // Selectively remove metadata directories, preserving critical ones
-    console.log('Selectively removing metadata directories...');
-    const criticalPackages = ['tqdm', 'transformers', 'torch', 'numpy', 'pillow', 'pil', 'tokenizers', 'safetensors', 'scipy', 'comfy'];
-    const metadataPatterns = [
-      path.join(MINIFORGE_DIR, '**', '*.dist-info'),
-      path.join(MINIFORGE_DIR, '**', '*.egg-info')
-    ];
-
-    for (const pattern of metadataPatterns) {
-      const matches = await promisifiedGlob(pattern, { nodir: false });
-      for (const match of matches) {
-        if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
-          // Check if this is a critical package
-          const shouldPreserve = criticalPackages.some(pkg =>
-            match.toLowerCase().includes(pkg.toLowerCase())
-          );
-
-          if (shouldPreserve) {
-            console.log(`Preserving metadata directory: ${match}`);
-          } else {
-            console.log(`Removing metadata directory: ${match}`);
-            deleteFolderRecursive(match);
-          }
-        }
-      }
-    }
+    // Preserve all package metadata
+    console.log('Preserving all package metadata...');
 
     // Remove conda package cache
     const pkgsDir = path.join(MINIFORGE_DIR, 'pkgs');
@@ -345,8 +325,8 @@ async function cleanupEnvironment() {
     // DO NOT remove any dynamic libraries or shared objects
     console.log('Preserving all dynamic libraries...');
 
-    // Remove only static libraries and source maps
-    const fileExtensions = ['.a', '.js.map'];
+    // Remove only static libraries
+    const fileExtensions = ['.a'];
     for (const ext of fileExtensions) {
       const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
       for (const match of matches) {
@@ -390,21 +370,8 @@ async function cleanupEnvironment() {
       }
     }
 
-    // Remove unused Python standard library modules
-    const pythonLibDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, 'lib', 'python*'));
-    for (const pythonLibDir of pythonLibDirs) {
-      if (fs.existsSync(pythonLibDir) && fs.statSync(pythonLibDir).isDirectory()) {
-        // Only remove modules that are definitely not needed
-        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter'];
-        for (const module of modulesToRemove) {
-          const modulePath = path.join(pythonLibDir, module);
-          if (fs.existsSync(modulePath)) {
-            console.log(`Removing Python module: ${module}`);
-            deleteFolderRecursive(modulePath);
-          }
-        }
-      }
-    }
+    // DO NOT remove any Python standard library modules
+    console.log('Preserving all Python standard library modules...');
 
     // Report size after cleanup
     console.log('Size after cleanup:');
