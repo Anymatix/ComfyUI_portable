@@ -19,6 +19,10 @@ on:
         description: 'Enable miniforge cleanup (WARNING: may break functionality)'
         required: false
         default: 'false'
+      test_launcher:
+        description: 'Test the launcher after setup (true/false)'
+        required: false
+        default: 'false'
 
 jobs:
   build:
@@ -31,6 +35,7 @@ jobs:
       RELEASE_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
       FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
       ENABLE_CLEANUP: ${{ github.event.inputs.enable_cleanup || 'false' }}
+      TEST_LAUNCHER: ${{ github.event.inputs.test_launcher || 'false' }}
 
     steps:
     - name: Checkout code
@@ -116,7 +121,7 @@ jobs:
     # Run setup script if cache miss or force rebuild
     - name: Run setup script
       if: steps.cache-anymatix.outputs.cache-hit != 'true' || env.FORCE_REBUILD == 'true'
-      run: node setup-python-env.js --enable-cleanup=${{ env.ENABLE_CLEANUP }}
+      run: node setup-python-env.js --enable-cleanup=${{ env.ENABLE_CLEANUP }} ${{ env.TEST_LAUNCHER == 'true' && '--test-launcher' || '' }}
 
     - name: List directories (Unix)
       if: runner.os != 'Windows'
