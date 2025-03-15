@@ -3,8 +3,12 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
 const os = require('os');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
+const glob = require('glob');
+const promisifiedGlob = promisify(glob);
 
 // Read version from version.yml if it exists
 let version = '1.0.0';
@@ -159,6 +163,162 @@ function downloadFile(url, destination) {
   });
 }
 
+// Cross-platform recursive directory deletion
+function deleteFolderRecursive(folderPath) {
+  if (fs.existsSync(folderPath)) {
+    fs.readdirSync(folderPath).forEach((file) => {
+      const curPath = path.join(folderPath, file);
+      if (fs.lstatSync(curPath).isDirectory()) {
+        // Recursive call
+        deleteFolderRecursive(curPath);
+      } else {
+        // Delete file
+        fs.unlinkSync(curPath);
+      }
+    });
+    fs.rmdirSync(folderPath);
+  }
+}
+
+// Cross-platform cleanup function
+async function cleanupEnvironment() {
+  console.log('Starting aggressive cleanup to reduce size...');
+
+  if (!fs.existsSync(MINIFORGE_DIR)) {
+    console.warn(`Warning: ${MINIFORGE_DIR} directory not found. Looking for other directories:`);
+    if (fs.existsSync(ANYMATIX_DIR)) {
+      fs.readdirSync(ANYMATIX_DIR).forEach(file => {
+        const filePath = path.join(ANYMATIX_DIR, file);
+        if (fs.statSync(filePath).isDirectory()) {
+          console.log(`- ${file}`);
+        }
+      });
+    }
+    return;
+  }
+
+  try {
+    // Define patterns to find directories to remove
+    const directoryPatterns = [
+      path.join(MINIFORGE_DIR, '**', '__pycache__'),
+      path.join(MINIFORGE_DIR, '**', 'tests'),
+      path.join(MINIFORGE_DIR, '**', 'test'),
+      path.join(MINIFORGE_DIR, '**', '*.dist-info'),
+      path.join(MINIFORGE_DIR, '**', '*.egg-info'),
+      path.join(MINIFORGE_DIR, '**', 'man'),
+      path.join(MINIFORGE_DIR, '**', 'doc'),
+      path.join(MINIFORGE_DIR, '**', 'docs'),
+      path.join(MINIFORGE_DIR, '**', 'examples'),
+      path.join(ANYMATIX_DIR, '**', '.git')
+    ];
+
+    // Find and remove directories
+    for (const pattern of directoryPatterns) {
+      const matches = await promisifiedGlob(pattern, { nodir: false });
+      for (const match of matches) {
+        if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
+          console.log(`Removing directory: ${match}`);
+          deleteFolderRecursive(match);
+        }
+      }
+    }
+
+    // Remove conda package cache and unnecessary files
+    const pkgsDir = path.join(MINIFORGE_DIR, 'pkgs');
+    if (fs.existsSync(pkgsDir)) {
+      const pkgsFiles = fs.readdirSync(pkgsDir);
+      for (const file of pkgsFiles) {
+        const filePath = path.join(pkgsDir, file);
+        if (fs.existsSync(filePath)) {
+          if (fs.statSync(filePath).isDirectory()) {
+            deleteFolderRecursive(filePath);
+          } else {
+            fs.unlinkSync(filePath);
+          }
+        }
+      }
+    }
+
+    const condaMetaDir = path.join(MINIFORGE_DIR, 'conda-meta');
+    if (fs.existsSync(condaMetaDir)) {
+      const jsonFiles = fs.readdirSync(condaMetaDir).filter(file => file.endsWith('.json'));
+      for (const file of jsonFiles) {
+        fs.unlinkSync(path.join(condaMetaDir, file));
+      }
+    }
+
+    const envsDir = path.join(MINIFORGE_DIR, 'envs');
+    if (fs.existsSync(envsDir)) {
+      deleteFolderRecursive(envsDir);
+    }
+
+    // Remove unnecessary file types
+    const fileExtensions = ['.a', '.js.map', '.h', '.hpp', '.c', '.cpp'];
+    for (const ext of fileExtensions) {
+      const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
+      for (const match of matches) {
+        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
+          fs.unlinkSync(match);
+        }
+      }
+    }
+
+    // Remove unused Python standard library modules
+    const pythonLibDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, 'lib', 'python*'));
+    for (const pythonLibDir of pythonLibDirs) {
+      if (fs.existsSync(pythonLibDir) && fs.statSync(pythonLibDir).isDirectory()) {
+        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter', 'ensurepip', 'distutils', 'lib2to3', 'unittest'];
+        for (const module of modulesToRemove) {
+          const modulePath = path.join(pythonLibDir, module);
+          if (fs.existsSync(modulePath)) {
+            console.log(`Removing Python module: ${module}`);
+            deleteFolderRecursive(modulePath);
+          }
+        }
+      }
+    }
+
+    // Report size after cleanup
+    console.log('Size after cleanup:');
+    let size;
+    if (os.platform() === 'win32') {
+      const { stdout } = await execAsync('powershell -Command "Get-ChildItem -Path anymatix -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum"');
+      size = parseInt(stdout.trim());
+      console.log(`${Math.round(size / (1024 * 1024))} MB`);
+    } else {
+      const { stdout } = await execAsync(`du -sh ${ANYMATIX_DIR}`);
+      console.log(stdout.trim());
+    }
+
+  } catch (error) {
+    console.error(`Error during cleanup: ${error.message}`);
+  }
+}
+
+// Helper function to create platform-specific package installation scripts
+function createPackageInstallationScripts() {
+  console.log('Creating package installation helper scripts...');
+
+  if (os.platform() === 'win32') {
+    // Create Windows batch file
+    const batchContent = `@echo off
+echo Installing package(s): %*
+.\\anymatix\\miniforge\\Scripts\\pip.exe install %*
+`;
+    fs.writeFileSync(path.join(__dirname, 'install_package.bat'), batchContent);
+    console.log('Created install_package.bat');
+  } else {
+    // Create Unix shell script
+    const shContent = `#!/bin/bash
+echo "Installing package(s): $@"
+./anymatix/miniforge/bin/pip install "$@"
+`;
+    fs.writeFileSync(path.join(__dirname, 'install_package.sh'), shContent);
+    execSync(`chmod +x ${path.join(__dirname, 'install_package.sh')}`);
+    console.log('Created install_package.sh');
+  }
+}
+
 // Main function
 async function main() {
   try {
@@ -231,9 +391,22 @@ async function main() {
       execSync(`git clone --depth=1 ${repo.url} ${path.join(customNodesPath, repoName)}`);
     }
 
+    // Run the cleanup process
+    console.log('Running cleanup process...');
+    await cleanupEnvironment();
+
+    // Create helper scripts for package installation
+    createPackageInstallationScripts();
+
     console.log('\nSetup completed successfully!');
     console.log(`Python with required packages installed at: ${MINIFORGE_DIR}`);
     console.log(`Version: ${version}`);
+    console.log('\nTo install additional packages, use:');
+    if (os.platform() === 'win32') {
+      console.log('  install_package.bat package_name');
+    } else {
+      console.log('  ./install_package.sh package_name');
+    }
 
   } catch (error) {
     console.error('Error:', error.message);
