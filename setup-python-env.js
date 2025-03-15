@@ -358,17 +358,66 @@ async function cleanupEnvironment() {
           fs.mkdirSync(dylibsDir, { recursive: true });
         }
 
-        // Copy all dynamic libraries to PIL/.dylibs
+        // Copy only necessary dynamic libraries to PIL/.dylibs
+        // This is a more selective approach to avoid the 12GB Linux size
         const libDir = path.join(MINIFORGE_DIR, 'lib');
         if (fs.existsSync(libDir)) {
-          // Find all dynamic libraries
-          const dylibPatterns = ['*.dylib', '*.so', '*.so.*', '*.dll'];
-          for (const pattern of dylibPatterns) {
-            const libFiles = await promisifiedGlob(path.join(libDir, pattern));
-            for (const libFile of libFiles) {
-              const destFile = path.join(dylibsDir, path.basename(libFile));
-              console.log(`Copying ${libFile} to ${destFile}`);
-              fs.copyFileSync(libFile, destFile);
+          // Platform-specific handling
+          if (os.platform() === 'darwin') {
+            // On macOS, copy all dylibs as they're typically smaller
+            const dylibPatterns = ['*.dylib'];
+            for (const pattern of dylibPatterns) {
+              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+              for (const libFile of libFiles) {
+                const destFile = path.join(dylibsDir, path.basename(libFile));
+                console.log(`Copying ${libFile} to ${destFile}`);
+                fs.copyFileSync(libFile, destFile);
+              }
+            }
+          } else if (os.platform() === 'linux') {
+            // On Linux, only copy essential libraries to avoid massive size
+            // List of essential libraries for PIL on Linux
+            const essentialLibs = [
+              'libz.so*',
+              'libjpeg.so*',
+              'libpng.so*',
+              'libtiff.so*',
+              'libfreetype.so*',
+              'liblcms2.so*',
+              'libwebp.so*',
+              'libopenjp2.so*'
+            ];
+
+            for (const pattern of essentialLibs) {
+              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+              for (const libFile of libFiles) {
+                const destFile = path.join(dylibsDir, path.basename(libFile));
+                console.log(`Copying essential library: ${libFile} to ${destFile}`);
+                fs.copyFileSync(libFile, destFile);
+              }
+            }
+
+            // Create a symbolic link for LD_LIBRARY_PATH to find the libraries
+            const ldConfigPath = path.join(ANYMATIX_DIR, 'set_library_path.sh');
+            const ldConfigContent = `#!/bin/bash
+# Add the library directory to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="${libDir}:$LD_LIBRARY_PATH"
+# Execute the command passed as arguments
+exec "$@"
+`;
+            fs.writeFileSync(ldConfigPath, ldConfigContent);
+            execSync(`chmod +x ${ldConfigPath}`);
+            console.log(`Created ${ldConfigPath} to help find libraries at runtime`);
+          } else if (os.platform() === 'win32') {
+            // On Windows, copy all DLLs
+            const dllPatterns = ['*.dll'];
+            for (const pattern of dllPatterns) {
+              const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+              for (const libFile of libFiles) {
+                const destFile = path.join(dylibsDir, path.basename(libFile));
+                console.log(`Copying ${libFile} to ${destFile}`);
+                fs.copyFileSync(libFile, destFile);
+              }
             }
           }
         }

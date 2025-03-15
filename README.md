@@ -1,107 +1,68 @@
-# ComfyUI Portable Environment Requirements
+# ComfyUI Portable Environment Setup
 
-This document outlines the requirements and optimizations for the ComfyUI portable Python environment setup.
+This repository contains scripts to set up a portable Python environment for ComfyUI that works across Windows, macOS, and Linux.
 
 ## Core Requirements
 
-1. **Multi-platform Support**
-   - Windows, macOS, and Linux compatibility
-   - Architecture-specific builds (x86_64, arm64/aarch64)
-   - Cross-platform setup process using Node.js
+- **Multi-Platform Support**: Works on Windows, macOS, and Linux
+- **Minimal Installation Size**: Optimized for size while maintaining functionality
+- **Cross-Platform Setup**: Uses Node.js to set up a portable Python environment with all required dependencies
 
-2. **Minimal Installation Size**
-   - Use Miniforge instead of Miniconda for smaller base installation
-   - Minimal cleanup approach that prioritizes functionality over size
-   - Direct artifact download without nested compression
+## How It Works
 
-3. **Version Management**
-   - Version information stored in `version.yml`
-   - Version number included in artifact names
+The setup script (`setup-python-env.js`) performs the following tasks:
 
-4. **Package Management**
-   - Helper scripts for installing additional packages
-   - Preservation of core pip functionality
+1. Downloads and installs Miniforge (a minimal Conda distribution)
+2. Installs all required Python packages from `requirements.txt`
+3. Clones the ComfyUI repository and custom nodes
+4. Performs a minimal cleanup to optimize size while preserving functionality
 
-## Implementation Details
+## Platform-Specific Library Handling
 
-### Python Environment
+The script handles dynamic libraries differently based on the platform to optimize size and ensure compatibility:
 
-- **Miniforge**: Using Miniforge as the base Python distribution (smaller than Miniconda)
-- **Dynamic Version URLs**: Always downloading the latest version using GitHub's `/latest/download/` URLs
-- **Platform Detection**: Automatic detection of OS and architecture to download the correct installer
+- **macOS**: Copies all `.dylib` files to the PIL/.dylibs directory to ensure proper loading
+- **Linux**: Only copies essential libraries for PIL to avoid excessive size (the full Linux environment was previously 12GB!)
+- **Windows**: Copies all DLL files needed for proper operation
 
-### Cleanup Process
+### Linux Users
 
-The following minimal cleanup steps are performed to preserve full functionality:
+On Linux, a helper script `set_library_path.sh` is created in the `anymatix` directory. This script sets the `LD_LIBRARY_PATH` environment variable to help find the necessary libraries at runtime. To use ComfyUI on Linux, run:
 
-1. Remove only non-essential directories:
-   - `__pycache__` directories
-   - Documentation (`man`, `doc`, `docs`, `examples`)
-   - Preserves all test directories and modules
+```bash
+cd anymatix
+./set_library_path.sh ./ComfyUI/main.py
+```
 
-2. Preserve all package metadata:
-   - All `.dist-info` and `.egg-info` directories are preserved
-   - This ensures proper package version detection and dependency resolution
+## Cleanup Process
 
-3. Remove conda package cache:
-   - `pkgs/*` and `envs/` directories are removed to save space
+The cleanup process is designed to be minimal and preserve full functionality:
 
-4. Preserve all dynamic libraries:
-   - All `.dylib`, `.so`, `.dll` files are preserved
-   - Dynamic libraries are copied to the appropriate locations for PIL
-   - No removal of any shared libraries to ensure all dependencies are available
+- Removes unnecessary directories like `__pycache__`, `man`, `doc`, `docs`, and `examples`
+- Preserves all NumPy and SciPy test directories to ensure proper functionality
+- Removes conda package cache and environments
+- Preserves all dynamic libraries needed for operation
+- Only removes static libraries (`.a` files) which are not needed at runtime
 
-5. Remove only static libraries:
-   - Only static libraries (`.a`) are removed
-   - All other files are preserved to maintain compatibility
+## Artifact Structure
 
-6. Preserve all Python standard library modules:
-   - No Python modules are removed
-   - All standard library functionality is preserved
+GitHub Actions artifacts directly contain the `anymatix` directory, ensuring a consistent structure across platforms. The directory contains:
 
-7. Remove Git repositories:
-   - All `.git` directories from cloned repositories
-
-### Package Installation
-
-- Platform-specific helper scripts are created:
-  - `install_package.sh` for macOS/Linux
-  - `install_package.bat` for Windows
-- These scripts provide a simple interface to install additional packages
-
-### Artifact Structure
-
-- GitHub Actions artifacts directly contain the `anymatix` directory
-- When downloaded and extracted, the `anymatix` directory contains:
-  - `ComfyUI`: The ComfyUI application
-  - `miniforge`: The Python environment with all dependencies
-- No nested zip files or additional extraction steps required
-- Consistent structure across all platforms (Windows, macOS, Linux)
-
-### CI/CD Integration
-
-- GitHub Actions workflow for automated builds
-- Separate builds for Windows, macOS, and Linux
-- Version number from `version.yml` or workflow input parameter
-- Artifact naming includes version and platform information
-
-## Dependencies
-
-The Python environment includes the following key dependencies:
-
-- PyTorch ecosystem (torch, torchvision, torchaudio)
-- Transformers and related libraries
-- Image processing libraries (PIL with all required native dependencies)
-- ComfyUI and custom nodes
+- `ComfyUI`: The ComfyUI repository with custom nodes
+- `miniforge`: The Python environment with all required packages
 
 ## Known Issues and Solutions
 
-- **macOS Security**: On macOS, you may need to remove quarantine attributes with `xattr -r -d com.apple.quarantine .` to run the Python executable.
-- **First Run**: The first run may take longer as Python compiles various modules.
+- **macOS Security**: The first run of the Python executable might be blocked by macOS security. Right-click on the executable and select "Open" to bypass this.
+- **Linux Library Path**: On Linux, use the provided `set_library_path.sh` script to ensure all libraries are found correctly.
 
-## Future Improvements
+## Development
 
-- Further size optimization by selective inclusion of Python packages
-- Improved error handling for network issues during downloads
-- More granular control over which components are included
-- GUI for package management 
+To install additional packages, use the provided helper scripts:
+
+- Windows: `install_package.bat package_name`
+- macOS/Linux: `./install_package.sh package_name`
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 
