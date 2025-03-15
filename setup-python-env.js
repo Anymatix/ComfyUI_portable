@@ -289,12 +289,17 @@ async function cleanupEnvironment() {
       path.join(ANYMATIX_DIR, '**', '.git')
     ];
 
+    // Explicitly ensure numpy tests are preserved
+    console.log('Ensuring NumPy and SciPy test directories are preserved...');
+    const numpyPath = path.join(MINIFORGE_DIR, 'lib', 'python3.12', 'site-packages', 'numpy');
+    const scipyPath = path.join(MINIFORGE_DIR, 'lib', 'python3.12', 'site-packages', 'scipy');
+
     // Find and remove directories
     for (const pattern of directoryPatterns) {
       const matches = await promisifiedGlob(pattern, { nodir: false });
       for (const match of matches) {
-        // Skip any NumPy directories
-        if (match.includes('numpy') || match.includes('scipy')) {
+        // Skip any NumPy or SciPy directories
+        if (match.includes('numpy') || match.includes('scipy') || match.includes('test') || match.includes('tests')) {
           console.log(`Preserving directory: ${match}`);
           continue;
         }
