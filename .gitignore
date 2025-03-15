@@ -17,3 +17,4 @@ miniconda.sh
 miniforge.sh
 .editorconfig
 .gitattributes
+node_modules
