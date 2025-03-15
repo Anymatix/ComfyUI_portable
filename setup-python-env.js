@@ -263,7 +263,7 @@ function deleteFolderRecursive(folderPath) {
 
 // Cross-platform cleanup function
 async function cleanupEnvironment() {
-  console.log('Starting aggressive cleanup to reduce size...');
+  console.log('Starting cleanup to reduce size while preserving functionality...');
 
   if (!fs.existsSync(MINIFORGE_DIR)) {
     console.warn(`Warning: ${MINIFORGE_DIR} directory not found. Looking for other directories:`);
@@ -284,9 +284,6 @@ async function cleanupEnvironment() {
       path.join(MINIFORGE_DIR, '**', '__pycache__'),
       path.join(MINIFORGE_DIR, '**', 'tests'),
       path.join(MINIFORGE_DIR, '**', 'test'),
-      // Preserve metadata for critical packages
-      // path.join(MINIFORGE_DIR, '**', '*.dist-info'),
-      // path.join(MINIFORGE_DIR, '**', '*.egg-info'),
       path.join(MINIFORGE_DIR, '**', 'man'),
       path.join(MINIFORGE_DIR, '**', 'doc'),
       path.join(MINIFORGE_DIR, '**', 'docs'),
@@ -307,7 +304,7 @@ async function cleanupEnvironment() {
 
     // Selectively remove metadata directories, preserving critical ones
     console.log('Selectively removing metadata directories...');
-    const criticalPackages = ['tqdm', 'transformers', 'torch', 'numpy', 'pillow', 'pil', 'tokenizers', 'safetensors'];
+    const criticalPackages = ['tqdm', 'transformers', 'torch', 'numpy', 'pillow', 'pil', 'tokenizers', 'safetensors', 'scipy', 'comfy'];
     const metadataPatterns = [
       path.join(MINIFORGE_DIR, '**', '*.dist-info'),
       path.join(MINIFORGE_DIR, '**', '*.egg-info')
@@ -332,64 +329,57 @@ async function cleanupEnvironment() {
       }
     }
 
-    // Remove conda package cache and unnecessary files
+    // Remove conda package cache
     const pkgsDir = path.join(MINIFORGE_DIR, 'pkgs');
     if (fs.existsSync(pkgsDir)) {
-      const pkgsFiles = fs.readdirSync(pkgsDir);
-      for (const file of pkgsFiles) {
-        const filePath = path.join(pkgsDir, file);
-        if (fs.existsSync(filePath)) {
-          if (fs.statSync(filePath).isDirectory()) {
-            deleteFolderRecursive(filePath);
-          } else {
-            fs.unlinkSync(filePath);
-          }
-        }
-      }
-    }
-
-    const condaMetaDir = path.join(MINIFORGE_DIR, 'conda-meta');
-    if (fs.existsSync(condaMetaDir)) {
-      const jsonFiles = fs.readdirSync(condaMetaDir).filter(file => file.endsWith('.json'));
-      for (const file of jsonFiles) {
-        fs.unlinkSync(path.join(condaMetaDir, file));
-      }
+      console.log(`Removing conda package cache: ${pkgsDir}`);
+      deleteFolderRecursive(pkgsDir);
     }
 
     const envsDir = path.join(MINIFORGE_DIR, 'envs');
     if (fs.existsSync(envsDir)) {
+      console.log(`Removing conda environments: ${envsDir}`);
       deleteFolderRecursive(envsDir);
     }
 
-    // Preserve dynamic libraries needed by packages
-    console.log('Ensuring dynamic libraries are preserved...');
+    // DO NOT remove any dynamic libraries or shared objects
+    console.log('Preserving all dynamic libraries...');
 
-    // Create .dylibs directories if they don't exist
+    // Remove only static libraries and source maps
+    const fileExtensions = ['.a', '.js.map'];
+    for (const ext of fileExtensions) {
+      const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
+      for (const match of matches) {
+        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
+          console.log(`Removing file: ${match}`);
+          fs.unlinkSync(match);
+        }
+      }
+    }
+
+    // Ensure PIL can find its dynamic libraries
+    console.log('Ensuring PIL can find its dynamic libraries...');
+
+    // Find the PIL directory
     const sitePackagesDir = path.join(MINIFORGE_DIR, 'lib', 'python*', 'site-packages');
     const sitePackagesDirs = await promisifiedGlob(sitePackagesDir);
 
     for (const dir of sitePackagesDirs) {
       const pilDir = path.join(dir, 'PIL');
       if (fs.existsSync(pilDir)) {
+        // Create .dylibs directory if it doesn't exist
         const dylibsDir = path.join(pilDir, '.dylibs');
         if (!fs.existsSync(dylibsDir)) {
           fs.mkdirSync(dylibsDir, { recursive: true });
         }
 
-        // Copy necessary dynamic libraries to PIL/.dylibs
+        // Copy all dynamic libraries to PIL/.dylibs
         const libDir = path.join(MINIFORGE_DIR, 'lib');
         if (fs.existsSync(libDir)) {
-          const libFiles = await promisifiedGlob(path.join(libDir, 'libtiff*.dylib'));
-          for (const libFile of libFiles) {
-            const destFile = path.join(dylibsDir, path.basename(libFile));
-            console.log(`Copying ${libFile} to ${destFile}`);
-            fs.copyFileSync(libFile, destFile);
-          }
-
-          // Copy other common dependencies
-          const otherLibs = ['libjpeg*.dylib', 'libpng*.dylib', 'libz*.dylib', 'liblcms*.dylib', 'libwebp*.dylib'];
-          for (const libPattern of otherLibs) {
-            const libFiles = await promisifiedGlob(path.join(libDir, libPattern));
+          // Find all dynamic libraries
+          const dylibPatterns = ['*.dylib', '*.so', '*.so.*', '*.dll'];
+          for (const pattern of dylibPatterns) {
+            const libFiles = await promisifiedGlob(path.join(libDir, pattern));
             for (const libFile of libFiles) {
               const destFile = path.join(dylibsDir, path.basename(libFile));
               console.log(`Copying ${libFile} to ${destFile}`);
@@ -400,41 +390,12 @@ async function cleanupEnvironment() {
       }
     }
 
-    // Remove unnecessary file types, but be more selective
-    const fileExtensions = ['.a', '.js.map'];
-    for (const ext of fileExtensions) {
-      const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
-      for (const match of matches) {
-        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
-          fs.unlinkSync(match);
-        }
-      }
-    }
-
-    // Be more selective with header files - keep those that might be needed
-    const headerPatterns = [
-      path.join(MINIFORGE_DIR, 'include', '**', '*.h'),
-      path.join(MINIFORGE_DIR, 'include', '**', '*.hpp'),
-    ];
-
-    for (const pattern of headerPatterns) {
-      const matches = await promisifiedGlob(pattern);
-      for (const match of matches) {
-        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
-          // Skip essential headers
-          if (match.includes('numpy') || match.includes('python')) {
-            continue;
-          }
-          fs.unlinkSync(match);
-        }
-      }
-    }
-
     // Remove unused Python standard library modules
     const pythonLibDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, 'lib', 'python*'));
     for (const pythonLibDir of pythonLibDirs) {
       if (fs.existsSync(pythonLibDir) && fs.statSync(pythonLibDir).isDirectory()) {
-        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter', 'ensurepip', 'distutils', 'lib2to3'];
+        // Only remove modules that are definitely not needed
+        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter'];
         for (const module of modulesToRemove) {
           const modulePath = path.join(pythonLibDir, module);
           if (fs.existsSync(modulePath)) {

@@ -11,8 +11,8 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 
 2. **Minimal Installation Size**
    - Use Miniforge instead of Miniconda for smaller base installation
-   - Smart cleanup of unnecessary files while preserving required dependencies
-   - Optimized compression with GitHub Actions artifact compression
+   - Balanced cleanup approach that preserves functionality while reducing size
+   - Optimized compression with standard ZIP format
 
 3. **Version Management**
    - Version information stored in `version.yml`
@@ -32,7 +32,7 @@ This document outlines the requirements and optimizations for the ComfyUI portab
 
 ### Cleanup Process
 
-The following cleanup steps are performed to minimize the installation size while ensuring functionality:
+The following cleanup steps are performed to balance size reduction with functionality:
 
 1. Remove unnecessary directories:
    - `__pycache__`, `tests`, `test` directories
@@ -43,21 +43,20 @@ The following cleanup steps are performed to minimize the installation size whil
    - This ensures proper package version detection and dependency resolution
 
 3. Remove conda package cache:
-   - `pkgs/*`, `conda-meta/*.json`, `envs/`
+   - `pkgs/*` and `envs/` directories are removed to save space
 
-4. Selectively remove unnecessary file types:
-   - Static libraries (`.a`) and source maps (`.js.map`)
-   - Selectively remove header files (`.h`, `.hpp`) while preserving essential ones
-   - Preserve all dynamic libraries needed by packages
+4. Preserve all dynamic libraries:
+   - All `.dylib`, `.so`, `.dll` files are preserved
+   - Dynamic libraries are copied to the appropriate locations for PIL
+   - No removal of any shared libraries to ensure all dependencies are available
 
-5. Preserve dynamic library dependencies:
-   - Copy required `.dylibs` files to the appropriate locations
-   - Ensure PIL and other packages can find their native dependencies
-   - Maintain proper library paths for cross-platform compatibility
+5. Remove only static libraries and source maps:
+   - Static libraries (`.a`) and source maps (`.js.map`) are removed
+   - Header files are preserved to maintain compatibility
 
-6. Remove unused Python standard library modules:
-   - `idlelib`, `turtledemo`, `tkinter`, `ensurepip`, `distutils`, `lib2to3`
-   - Preserve `unittest` and other modules required by PyTorch
+6. Remove only non-essential Python standard library modules:
+   - Only `idlelib`, `turtledemo`, and `tkinter` are removed
+   - All other modules are preserved to ensure compatibility
 
 7. Remove Git repositories:
    - All `.git` directories from cloned repositories
@@ -71,9 +70,10 @@ The following cleanup steps are performed to minimize the installation size whil
 
 ### Artifact Structure
 
-- GitHub Actions artifacts directly contain the `anymatix` directory
-- When downloaded and extracted, the `anymatix` directory is immediately available
-- No nested zip files or additional extraction steps required
+- ZIP files contain the `anymatix` directory as the root
+- When extracted, the `anymatix` directory contains:
+  - `ComfyUI`: The ComfyUI application
+  - `miniforge`: The Python environment with all dependencies
 - Consistent structure across all platforms (Windows, macOS, Linux)
 
 ### CI/CD Integration
@@ -94,10 +94,8 @@ The Python environment includes the following key dependencies:
 
 ## Known Issues and Solutions
 
-- **Dynamic Library Dependencies**: The portable environment preserves all necessary dynamic libraries to ensure packages like PIL work correctly across platforms.
-- **Module Dependencies**: Some Python modules (like `unittest`) are preserved even during aggressive cleanup because they're required by packages like PyTorch.
-- **Package Metadata**: Metadata for critical packages is preserved to ensure proper version detection and dependency resolution.
 - **macOS Security**: On macOS, you may need to remove quarantine attributes with `xattr -r -d com.apple.quarantine .` to run the Python executable.
+- **First Run**: The first run may take longer as Python compiles various modules.
 
 ## Future Improvements
 
