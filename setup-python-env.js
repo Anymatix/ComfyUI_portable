@@ -356,91 +356,439 @@ async function setupPILDynamicLibraries() {
 
 // Cross-platform cleanup function
 async function cleanupEnvironment() {
-  console.log('Starting minimal cleanup to preserve full functionality...');
+  console.log('Starting aggressive cleanup to reduce size while maintaining functionality...');
 
   if (!fs.existsSync(MINIFORGE_DIR)) {
-    console.warn(`Warning: ${MINIFORGE_DIR} directory not found. Looking for other directories:`);
-    if (fs.existsSync(ANYMATIX_DIR)) {
-      fs.readdirSync(ANYMATIX_DIR).forEach(file => {
-        const filePath = path.join(ANYMATIX_DIR, file);
-        if (fs.statSync(filePath).isDirectory()) {
-          console.log(`- ${file}`);
-        }
-      });
-    }
+    console.warn(`Warning: ${MINIFORGE_DIR} directory not found. Skipping cleanup.`);
     return;
   }
 
   try {
-    // Define patterns to find directories to remove - be very selective
-    const directoryPatterns = [
-      path.join(MINIFORGE_DIR, '**', '__pycache__'),
-      path.join(MINIFORGE_DIR, '**', 'man'),
-      path.join(MINIFORGE_DIR, '**', 'doc'),
-      path.join(MINIFORGE_DIR, '**', 'docs'),
-      path.join(MINIFORGE_DIR, '**', 'examples'),
-      path.join(ANYMATIX_DIR, '**', '.git')
-    ];
-
-    // Explicitly ensure numpy tests are preserved
-    console.log('Ensuring NumPy and SciPy test directories are preserved...');
-    const numpyPath = path.join(MINIFORGE_DIR, 'lib', 'python3.12', 'site-packages', 'numpy');
-    const scipyPath = path.join(MINIFORGE_DIR, 'lib', 'python3.12', 'site-packages', 'scipy');
-
-    // Find and remove directories
-    for (const pattern of directoryPatterns) {
-      const matches = await promisifiedGlob(pattern, { nodir: false });
-      for (const match of matches) {
-        // Skip any NumPy or SciPy directories
-        if (match.includes('numpy') || match.includes('scipy') || match.includes('test') || match.includes('tests')) {
-          console.log(`Preserving directory: ${match}`);
-          continue;
-        }
-
-        if (fs.existsSync(match) && fs.statSync(match).isDirectory()) {
-          console.log(`Removing directory: ${match}`);
-          deleteFolderRecursive(match);
-        }
-      }
+    // Report size before cleanup
+    console.log('Size before cleanup:');
+    if (os.platform() === 'win32') {
+      const { stdout } = await execAsync('powershell -Command "Get-ChildItem -Path anymatix -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum"');
+      const size = parseInt(stdout.trim());
+      console.log(`${Math.round(size / (1024 * 1024))} MB`);
+    } else {
+      const { stdout } = await execAsync(`du -sh ${ANYMATIX_DIR}`);
+      console.log(stdout.trim());
     }
 
-    // Preserve all package metadata
-    console.log('Preserving all package metadata...');
-
-    // Remove conda package cache
+    // Step 1: Remove conda package cache - this is safe and saves a lot of space
     const pkgsDir = path.join(MINIFORGE_DIR, 'pkgs');
     if (fs.existsSync(pkgsDir)) {
       console.log(`Removing conda package cache: ${pkgsDir}`);
       deleteFolderRecursive(pkgsDir);
     }
 
+    // Step 2: Remove conda environments (except base)
     const envsDir = path.join(MINIFORGE_DIR, 'envs');
     if (fs.existsSync(envsDir)) {
       console.log(`Removing conda environments: ${envsDir}`);
       deleteFolderRecursive(envsDir);
     }
 
-    // DO NOT remove any dynamic libraries or shared objects
-    console.log('Preserving all dynamic libraries...');
+    // Step 3: Remove all __pycache__ directories
+    console.log('Removing __pycache__ directories...');
+    const pycacheDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', '__pycache__'));
+    for (const dir of pycacheDirs) {
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+        console.log(`Removing: ${dir}`);
+        deleteFolderRecursive(dir);
+      }
+    }
 
-    // Remove only static libraries
-    const fileExtensions = ['.a'];
-    for (const ext of fileExtensions) {
-      const matches = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', `*${ext}`));
-      for (const match of matches) {
-        if (fs.existsSync(match) && fs.statSync(match).isFile()) {
-          console.log(`Removing file: ${match}`);
-          fs.unlinkSync(match);
+    // Step 4: Remove documentation, tests, examples, etc.
+    const dirsToRemove = [
+      'man', 'share/man', 'share/doc', 'share/gtk-doc', 'doc', 'docs', 'documentation',
+      'examples', 'demo', 'samples', 'tests', 'testing', 'test', 'benchmarks',
+      'share/info', 'info', 'locale', 'share/locale', 'include',
+      'share/terminfo', 'share/applications', 'share/icons', 'share/jupyter',
+      'compiler_compat', 'conda-meta', 'share/fonts', 'share/terminfo',
+      'share/readline', 'share/zoneinfo', 'share/X11', 'share/aclocal',
+      'share/cmake', 'share/gettext', 'share/glib-2.0', 'share/pkgconfig',
+      'share/texinfo', 'share/xml', 'share/bash-completion', 'share/ca-certificates',
+      'share/emacs', 'share/gnupg', 'share/licenses', 'share/pixmaps',
+      'share/tabset', 'share/themes', 'share/vala', 'share/zsh'
+    ];
+
+    for (const dirPattern of dirsToRemove) {
+      const dirs = await promisifiedGlob(path.join(MINIFORGE_DIR, '**', dirPattern));
+      for (const dir of dirs) {
+        // Skip critical directories
+        if (dir.includes('site-packages/numpy/core/include') ||
+          dir.includes('site-packages/torch/include')) {
+          console.log(`Preserving critical directory: ${dir}`);
+          continue;
+        }
+
+        if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+          console.log(`Removing: ${dir}`);
+          deleteFolderRecursive(dir);
         }
       }
     }
 
-    // Report size after cleanup
+    // Step 5: Remove static libraries (.a files) and object files (.o files)
+    console.log('Removing static libraries and object files...');
+    const staticLibPatterns = ['**/*.a', '**/*.o', '**/*.la', '**/*.lib', '**/*.pdb', '**/*.exp'];
+    for (const pattern of staticLibPatterns) {
+      const files = await promisifiedGlob(path.join(MINIFORGE_DIR, pattern));
+      for (const file of files) {
+        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+          console.log(`Removing: ${file}`);
+          fs.unlinkSync(file);
+        }
+      }
+    }
+
+    // Step 6: Remove Python bytecode files (.pyc, .pyo)
+    console.log('Removing Python bytecode files...');
+    const bytecodePatterns = ['**/*.pyc', '**/*.pyo'];
+    for (const pattern of bytecodePatterns) {
+      const files = await promisifiedGlob(path.join(MINIFORGE_DIR, pattern));
+      for (const file of files) {
+        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+          console.log(`Removing: ${file}`);
+          fs.unlinkSync(file);
+        }
+      }
+    }
+
+    // Step 7: Remove unnecessary executables and tools
+    console.log('Removing unnecessary executables and tools...');
+    const toolsToRemove = [
+      'bin/2to3*', 'bin/activate*', 'bin/conda*', 'bin/wheel*', 'bin/easy_install*',
+      'bin/f2py*', 'bin/idle*', 'bin/pydoc*', 'bin/python*-config', 'bin/sqlite3*',
+      'bin/openssl*', 'bin/chardetect*', 'bin/normalizer*', 'bin/pygmentize*',
+      'bin/tqdm*', 'bin/torchrun*', 'bin/convert-caffe2-to-onnx*', 'bin/convert-onnx-to-caffe2*',
+      'bin/flask*', 'bin/futurize*', 'bin/pasteurize*', 'bin/markdown_py*',
+      'bin/jp.py*', 'bin/jsonschema*', 'bin/pyrsa*', 'bin/tabulate*',
+      'bin/tiffcomment*', 'bin/tiffcp*', 'bin/tiffcrop*', 'bin/tiffdither*',
+      'bin/tiffdump*', 'bin/tiffinfo*', 'bin/tiffmedian*', 'bin/tiffset*',
+      'bin/tiffsplit*', 'bin/ttx*', 'bin/xslt*', 'bin/xml*', 'bin/c_rehash*',
+      'bin/ncursesw6-config*', 'bin/pcre*', 'bin/libpng*', 'bin/freetype*',
+      'bin/curl*', 'bin/curl-config*', 'bin/pkg-config*', 'bin/x86_64-conda*',
+      'bin/gif*', 'bin/lz*', 'bin/xz*', 'bin/bz*', 'bin/zipinfo*', 'bin/unzip*',
+      'bin/zip*', 'bin/iconv*', 'bin/gettext*', 'bin/msgfmt*', 'bin/msgmerge*',
+      'bin/xgettext*', 'bin/envsubst*', 'bin/ngettext*', 'bin/gettextize*'
+    ];
+
+    // Keep python and pip executables
+    const toolsToKeep = ['bin/python*', 'bin/pip'];
+
+    for (const pattern of toolsToRemove) {
+      const files = await promisifiedGlob(path.join(MINIFORGE_DIR, pattern));
+      for (const file of files) {
+        // Skip files that match patterns in toolsToKeep
+        let shouldKeep = false;
+        for (const keepPattern of toolsToKeep) {
+          const keepRegex = new RegExp(keepPattern.replace('*', '.*'));
+          if (keepRegex.test(file)) {
+            shouldKeep = true;
+            break;
+          }
+        }
+
+        if (shouldKeep) {
+          console.log(`Keeping: ${file}`);
+          continue;
+        }
+
+        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+          console.log(`Removing: ${file}`);
+          fs.unlinkSync(file);
+        }
+      }
+    }
+
+    // Step 8: Clean up Python packages that aren't needed for ComfyUI
+    console.log('Cleaning up unnecessary Python packages...');
+    const pythonPackagesToClean = [
+      'pip', 'setuptools', 'wheel', 'conda', 'conda-package-handling',
+      'ipython', 'ipykernel', 'jupyter', 'notebook', 'nbconvert',
+      'nbformat', 'ipywidgets', 'widgetsnbextension', 'jupyter_client',
+      'jupyter_console', 'jupyter_core', 'qtconsole', 'traitlets',
+      'sphinx', 'sphinx_rtd_theme', 'numpydoc', 'pytest', 'nose',
+      'coverage', 'flake8', 'pylint', 'black', 'mypy', 'isort',
+      'autopep8', 'yapf', 'pycodestyle', 'pydocstyle', 'pyflakes',
+      'mccabe', 'rope', 'jedi', 'parso', 'pyls', 'pyls-black',
+      'pyls-isort', 'pyls-mypy', 'python-lsp-server', 'python-lsp-black',
+      'python-lsp-jsonrpc', 'python-lsp-server', 'pywinpty', 'ptyprocess',
+      'terminado', 'send2trash', 'prometheus_client', 'pandocfilters',
+      'mistune', 'entrypoints', 'defusedxml', 'bleach', 'webencodings',
+      'testpath', 'pyzmq', 'pywin32', 'pywinpty', 'pyrsistent',
+      'pyparsing', 'pycparser', 'ptyprocess', 'prompt_toolkit',
+      'pickleshare', 'pexpect', 'parso', 'pandocfilters', 'packaging',
+      'nest_asyncio', 'mistune', 'markupsafe', 'jupyterlab_pygments',
+      'jsonschema', 'jinja2', 'jedi', 'ipython_genutils', 'importlib_metadata',
+      'entrypoints', 'decorator', 'defusedxml', 'debugpy', 'backcall',
+      'attrs', 'argon2-cffi', 'async_generator', 'bleach', 'cffi',
+      'colorama', 'cycler', 'cython', 'dask', 'distributed', 'h5py',
+      'imageio', 'joblib', 'kiwisolver', 'llvmlite', 'lxml', 'matplotlib',
+      'networkx', 'numba', 'numexpr', 'pandas', 'patsy', 'pywavelets',
+      'scikit-image', 'scikit-learn', 'scipy', 'seaborn', 'statsmodels',
+      'sympy', 'tables', 'theano', 'xlrd', 'xlsxwriter', 'xlwt'
+    ];
+
+    // Get all site-packages directories
+    const sitePackagesDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, 'lib', 'python*', 'site-packages'));
+
+    for (const sitePackagesDir of sitePackagesDirs) {
+      for (const packageName of pythonPackagesToClean) {
+        // Check for package directory
+        const packageDir = path.join(sitePackagesDir, packageName);
+        if (fs.existsSync(packageDir) && fs.statSync(packageDir).isDirectory()) {
+          // Keep pip and setuptools but remove unnecessary files
+          if (packageName === 'pip' || packageName === 'setuptools') {
+            // For pip and setuptools, only remove tests and docs
+            const subdirsToRemove = ['pip/tests', 'pip/_vendor/*/tests', 'setuptools/tests', 'setuptools/command/tests'];
+            for (const subdir of subdirsToRemove) {
+              const subdirPattern = path.join(packageDir, subdir.replace('*', '**'));
+              const subdirs = await promisifiedGlob(subdirPattern);
+              for (const dir of subdirs) {
+                if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+                  console.log(`Removing: ${dir}`);
+                  deleteFolderRecursive(dir);
+                }
+              }
+            }
+          } else {
+            // For other packages, remove the entire directory
+            console.log(`Removing package: ${packageDir}`);
+            deleteFolderRecursive(packageDir);
+          }
+        }
+
+        // Check for egg-info directory
+        const eggInfoDir = path.join(sitePackagesDir, `${packageName}*.egg-info`);
+        const eggInfoDirs = await promisifiedGlob(eggInfoDir);
+        for (const dir of eggInfoDirs) {
+          if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            console.log(`Removing egg-info: ${dir}`);
+            deleteFolderRecursive(dir);
+          }
+        }
+
+        // Check for dist-info directory
+        const distInfoDir = path.join(sitePackagesDir, `${packageName}*.dist-info`);
+        const distInfoDirs = await promisifiedGlob(distInfoDir);
+        for (const dir of distInfoDirs) {
+          if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            console.log(`Removing dist-info: ${dir}`);
+            deleteFolderRecursive(dir);
+          }
+        }
+      }
+    }
+
+    // Step 9: Platform-specific cleanup
+    if (os.platform() === 'linux') {
+      // Linux-specific cleanup
+      console.log('Performing Linux-specific cleanup...');
+
+      // Remove unnecessary shared libraries (keep only those needed by PIL and other critical packages)
+      const essentialLibPrefixes = [
+        'libpython', 'libz.', 'libjpeg', 'libpng', 'libtiff', 'libfreetype',
+        'liblcms', 'libwebp', 'libopenjp2', 'libblas', 'liblapack', 'libgfortran',
+        'libquadmath', 'libstdc++', 'libgcc', 'libffi', 'libcrypto', 'libssl',
+        'libsqlite', 'libtorch', 'libcudnn', 'libcuda', 'libnvrtc', 'libnvToolsExt',
+        'libcublas', 'libcufft', 'libcurand', 'libcusolver', 'libcusparse',
+        'libnccl', 'libcudart', 'libc10', 'libtorch_cpu', 'libtorch_cuda',
+        // Additional critical libraries
+        'libm.', 'libc.', 'libdl.', 'librt.', 'libpthread.', 'libresolv.',
+        'libnsl.', 'libutil.', 'libncurses', 'libtinfo', 'libreadline',
+        'libgomp', 'libopenblas'
+      ];
+
+      // More aggressive Linux library cleanup
+      const libDirs = [
+        path.join(MINIFORGE_DIR, 'lib'),
+        path.join(MINIFORGE_DIR, 'lib64')
+      ];
+
+      for (const libDir of libDirs) {
+        if (fs.existsSync(libDir)) {
+          const libFiles = await promisifiedGlob(path.join(libDir, '*.so*'));
+          for (const file of libFiles) {
+            const filename = path.basename(file);
+            let isEssential = false;
+
+            for (const prefix of essentialLibPrefixes) {
+              if (filename.startsWith(prefix)) {
+                isEssential = true;
+                break;
+              }
+            }
+
+            if (!isEssential) {
+              console.log(`Removing non-essential library: ${file}`);
+              fs.unlinkSync(file);
+            }
+          }
+        }
+      }
+
+      // Remove unnecessary directories in lib
+      const linuxDirsToRemove = [
+        'pkgconfig', 'cmake', 'engines', 'engines-1.1', 'gconv',
+        'gettext', 'gio', 'glib-2.0', 'gtk-2.0', 'gtk-3.0',
+        'libffi', 'libthai', 'openmpi', 'perl', 'python*/__pycache__',
+        'python*/config-*', 'python*/ensurepip', 'python*/idlelib',
+        'python*/lib2to3', 'python*/tkinter', 'python*/turtledemo',
+        'python*/venv', 'python*/wsgiref', 'terminfo', 'xml'
+      ];
+
+      for (const dirPattern of linuxDirsToRemove) {
+        for (const libDir of libDirs) {
+          const dirs = await promisifiedGlob(path.join(libDir, dirPattern));
+          for (const dir of dirs) {
+            if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+              console.log(`Removing: ${dir}`);
+              deleteFolderRecursive(dir);
+            }
+          }
+        }
+      }
+
+    } else if (os.platform() === 'darwin') {
+      // macOS-specific cleanup
+      console.log('Performing macOS-specific cleanup...');
+
+      // Similar to Linux, but with .dylib extension
+      const essentialLibPrefixes = [
+        'libpython', 'libz.', 'libjpeg', 'libpng', 'libtiff', 'libfreetype',
+        'liblcms', 'libwebp', 'libopenjp2', 'libblas', 'liblapack', 'libgfortran',
+        'libquadmath', 'libstdc++', 'libgcc', 'libffi', 'libcrypto', 'libssl',
+        'libsqlite', 'libtorch', 'libcudnn', 'libcuda', 'libnvrtc', 'libnvToolsExt',
+        'libcublas', 'libcufft', 'libcurand', 'libcusolver', 'libcusparse',
+        'libnccl', 'libcudart', 'libc10', 'libtorch_cpu', 'libtorch_cuda',
+        // Additional critical libraries for macOS
+        'libSystem', 'libncurses', 'libobjc', 'libopenblas'
+      ];
+
+      const libDir = path.join(MINIFORGE_DIR, 'lib');
+      if (fs.existsSync(libDir)) {
+        const libFiles = await promisifiedGlob(path.join(libDir, '*.dylib'));
+        for (const file of libFiles) {
+          const filename = path.basename(file);
+          let isEssential = false;
+
+          for (const prefix of essentialLibPrefixes) {
+            if (filename.startsWith(prefix)) {
+              isEssential = true;
+              break;
+            }
+          }
+
+          if (!isEssential) {
+            console.log(`Removing non-essential library: ${file}`);
+            fs.unlinkSync(file);
+          }
+        }
+      }
+
+      // Remove unnecessary directories in lib
+      const macosDirsToRemove = [
+        'pkgconfig', 'cmake', 'engines', 'engines-1.1',
+        'gettext', 'gio', 'glib-2.0', 'gtk-2.0', 'gtk-3.0',
+        'libffi', 'openmpi', 'perl', 'python*/__pycache__',
+        'python*/config-*', 'python*/ensurepip', 'python*/idlelib',
+        'python*/lib2to3', 'python*/tkinter', 'python*/turtledemo',
+        'python*/venv', 'python*/wsgiref', 'terminfo', 'xml'
+      ];
+
+      for (const dirPattern of macosDirsToRemove) {
+        const dirs = await promisifiedGlob(path.join(libDir, dirPattern));
+        for (const dir of dirs) {
+          if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            console.log(`Removing: ${dir}`);
+            deleteFolderRecursive(dir);
+          }
+        }
+      }
+
+    } else if (os.platform() === 'win32') {
+      // Windows-specific cleanup
+      console.log('Performing Windows-specific cleanup...');
+
+      // Similar approach for Windows DLLs
+      const essentialLibPrefixes = [
+        'python', 'z.', 'jpeg', 'png', 'tiff', 'freetype',
+        'lcms', 'webp', 'openjp2', 'blas', 'lapack', 'gfortran',
+        'quadmath', 'stdc++', 'gcc', 'ffi', 'crypto', 'ssl',
+        'sqlite', 'torch', 'cudnn', 'cuda', 'nvrtc', 'nvToolsExt',
+        'cublas', 'cufft', 'curand', 'cusolver', 'cusparse',
+        'nccl', 'cudart', 'c10', 'torch_cpu', 'torch_cuda',
+        // Additional critical DLLs for Windows
+        'vcruntime', 'msvcp', 'concrt', 'api-ms-win', 'ucrtbase',
+        'openblas'
+      ];
+
+      const libDirs = [
+        path.join(MINIFORGE_DIR, 'Library', 'bin'),
+        path.join(MINIFORGE_DIR, 'DLLs')
+      ];
+
+      for (const libDir of libDirs) {
+        if (fs.existsSync(libDir)) {
+          const libFiles = await promisifiedGlob(path.join(libDir, '*.dll'));
+          for (const file of libFiles) {
+            const filename = path.basename(file).toLowerCase();
+            let isEssential = false;
+
+            for (const prefix of essentialLibPrefixes) {
+              if (filename.startsWith(prefix.toLowerCase())) {
+                isEssential = true;
+                break;
+              }
+            }
+
+            if (!isEssential) {
+              console.log(`Removing non-essential library: ${file}`);
+              fs.unlinkSync(file);
+            }
+          }
+        }
+      }
+
+      // Remove unnecessary directories in Library
+      const windowsDirsToRemove = [
+        'Library/share', 'Library/mingw-w64', 'Library/cmake',
+        'Library/pkgs', 'Library/etc', 'Library/include',
+        'Library/man', 'Library/doc', 'Library/info',
+        'Lib/__pycache__', 'Lib/ensurepip', 'Lib/idlelib',
+        'Lib/lib2to3', 'Lib/tkinter', 'Lib/turtledemo',
+        'Lib/venv', 'Lib/wsgiref', 'Lib/test'
+      ];
+
+      for (const dirPattern of windowsDirsToRemove) {
+        const dirs = await promisifiedGlob(path.join(MINIFORGE_DIR, dirPattern));
+        for (const dir of dirs) {
+          if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            console.log(`Removing: ${dir}`);
+            deleteFolderRecursive(dir);
+          }
+        }
+      }
+    }
+
+    // Step 10: Remove .git directories to save space
+    console.log('Removing .git directories...');
+    const gitDirs = await promisifiedGlob(path.join(ANYMATIX_DIR, '**', '.git'));
+    for (const dir of gitDirs) {
+      if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+        console.log(`Removing: ${dir}`);
+        deleteFolderRecursive(dir);
+      }
+    }
+
+    // Step 11: Report size after cleanup
     console.log('Size after cleanup:');
-    let size;
     if (os.platform() === 'win32') {
       const { stdout } = await execAsync('powershell -Command "Get-ChildItem -Path anymatix -Recurse | Measure-Object -Property Length -Sum | Select-Object -ExpandProperty Sum"');
-      size = parseInt(stdout.trim());
+      const size = parseInt(stdout.trim());
       console.log(`${Math.round(size / (1024 * 1024))} MB`);
     } else {
       const { stdout } = await execAsync(`du -sh ${ANYMATIX_DIR}`);
@@ -449,6 +797,7 @@ async function cleanupEnvironment() {
 
   } catch (error) {
     console.error(`Error during cleanup: ${error.message}`);
+    console.error(error.stack);
   }
 }
 
