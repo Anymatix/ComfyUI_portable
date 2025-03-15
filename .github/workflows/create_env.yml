@@ -69,13 +69,13 @@ jobs:
       if: runner.os == 'Windows'
       run: Get-ChildItem -Force
 
-    - name: Create 7z archive (Windows)
+    - name: Create zip archive (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.7z"
+        $zipPath = "${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-windows.zip"
         if (Test-Path -Path "anymatix") {
-          7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 $zipPath anymatix
+          Compress-Archive -Path anymatix -DestinationPath $zipPath -CompressionLevel Optimal
           # Report final archive size
           Get-Item $zipPath | Select-Object Length,Name
         } else {
@@ -84,23 +84,23 @@ jobs:
         }
         echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
 
-    - name: Create 7z archive (Unix)
+    - name: Create zip archive (Unix)
       if: runner.os != 'Windows'
       shell: bash
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-macos.7z"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-macos.zip"
         else
-          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-linux.7z"
+          zipPath="${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-linux.zip"
         fi
         
         if [ -d "anymatix" ]; then
-          7z a -t7z -mx=9 -mfb=273 -ms -md=31 -myx=9 -mtm=- -mmt -mmtf -md=1536m -mmf=bt3 -mmc=10000 -mpb=0 -mlc=0 "$zipPath" anymatix
+          zip -r -9 -q "$zipPath" anymatix
           # Report final archive size
           du -sh "$zipPath"
           # Verify the archive contents
           echo "Archive contents:"
-          7z l "$zipPath" | head -n 20
+          unzip -l "$zipPath" | head -n 20
         else
           echo "Error: anymatix directory not found"
           exit 1
