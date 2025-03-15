@@ -294,9 +294,21 @@ async function setupPILDynamicLibraries() {
         // Platform-specific handling
         if (os.platform() === 'darwin') {
           // On macOS, copy all dylibs as they're typically smaller
-          const dylibPatterns = ['*.dylib'];
+          // Enhanced to search in subdirectories as well
+          const dylibPatterns = ['*.dylib', '**/*.dylib'];
+
+          // Also specifically look for libtiff.6.dylib which is causing the error
+          console.log('Specifically looking for libtiff.6.dylib...');
+          const tiffLibs = await promisifiedGlob(path.join(libDir, '**', 'libtiff*.dylib'));
+          if (tiffLibs.length > 0) {
+            console.log(`Found ${tiffLibs.length} libtiff libraries: ${tiffLibs.join(', ')}`);
+          } else {
+            console.warn('Warning: libtiff.6.dylib not found in library directory!');
+          }
+
           for (const pattern of dylibPatterns) {
             const libFiles = await promisifiedGlob(path.join(libDir, pattern));
+            console.log(`Found ${libFiles.length} libraries with pattern ${pattern}`);
             for (const libFile of libFiles) {
               const destFile = path.join(dylibsDir, path.basename(libFile));
               console.log(`Copying ${libFile} to ${destFile}`);
@@ -325,18 +337,6 @@ async function setupPILDynamicLibraries() {
               fs.copyFileSync(libFile, destFile);
             }
           }
-
-          // Create a symbolic link for LD_LIBRARY_PATH to find the libraries
-          const ldConfigPath = path.join(ANYMATIX_DIR, 'set_library_path.sh');
-          const ldConfigContent = `#!/bin/bash
-# Add the library directory to LD_LIBRARY_PATH
-export LD_LIBRARY_PATH="${libDir}:$LD_LIBRARY_PATH"
-# Execute the command passed as arguments
-exec "$@"
-`;
-          fs.writeFileSync(ldConfigPath, ldConfigContent);
-          execSync(`chmod +x ${ldConfigPath}`);
-          console.log(`Created ${ldConfigPath} to help find libraries at runtime`);
         } else if (os.platform() === 'win32') {
           // On Windows, copy all DLLs
           const dllPatterns = ['*.dll'];
@@ -559,6 +559,21 @@ async function main() {
 
     // Create helper scripts for package installation
     createPackageInstallationScripts();
+
+    // Copy platform-specific helper scripts to anymatix directory
+    console.log('Copying platform-specific helper scripts...');
+    if (os.platform() === 'win32') {
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_windows.bat'), path.join(ANYMATIX_DIR, 'run_comfyui.bat'));
+      console.log('Copied run_comfyui_windows.bat to anymatix/run_comfyui.bat');
+    } else if (os.platform() === 'darwin') {
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_macos.sh'), path.join(ANYMATIX_DIR, 'run_comfyui.sh'));
+      execSync(`chmod +x ${path.join(ANYMATIX_DIR, 'run_comfyui.sh')}`);
+      console.log('Copied run_comfyui_macos.sh to anymatix/run_comfyui.sh and made it executable');
+    } else if (os.platform() === 'linux') {
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_linux.sh'), path.join(ANYMATIX_DIR, 'run_comfyui.sh'));
+      execSync(`chmod +x ${path.join(ANYMATIX_DIR, 'run_comfyui.sh')}`);
+      console.log('Copied run_comfyui_linux.sh to anymatix/run_comfyui.sh and made it executable');
+    }
 
     console.log('\nSetup completed successfully!');
     console.log(`Python with required packages installed at: ${MINIFORGE_DIR}`);

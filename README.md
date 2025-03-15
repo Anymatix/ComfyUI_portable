@@ -34,6 +34,15 @@ cd anymatix
 ./set_library_path.sh ./ComfyUI/main.py
 ```
 
+### macOS Users
+
+On macOS, a helper script `set_dyld_path.sh` is created in the `anymatix` directory. This script sets the `DYLD_LIBRARY_PATH` environment variable to help find the necessary libraries at runtime. If you encounter library loading issues (like missing `libtiff.6.dylib`), use this script:
+
+```bash
+cd anymatix
+./set_dyld_path.sh ./ComfyUI/main.py
+```
+
 ## Cleanup Process (Optional)
 
 The cleanup process is now **disabled by default** to ensure full functionality. It can be enabled with the `--enable-cleanup=true` flag when running the setup script, but this may cause issues with some libraries like PIL.
@@ -65,12 +74,38 @@ GitHub Actions artifacts directly contain the `anymatix` directory, ensuring a c
 
 - `ComfyUI`: The ComfyUI repository with custom nodes
 - `miniforge`: The Python environment with all required packages
+- `run_comfyui.sh` (macOS/Linux) or `run_comfyui.bat` (Windows): Platform-specific helper scripts to launch ComfyUI
+
+## Running ComfyUI
+
+To run ComfyUI, use the platform-specific helper script included in the `anymatix` directory:
+
+### Windows
+```
+cd anymatix
+run_comfyui.bat
+```
+
+### macOS
+```bash
+cd anymatix
+./run_comfyui.sh
+```
+
+### Linux
+```bash
+cd anymatix
+./run_comfyui.sh
+```
+
+These scripts set up the necessary environment variables and launch ComfyUI with the correct Python interpreter.
 
 ## Known Issues and Solutions
 
 - **macOS Security**: The first run of the Python executable might be blocked by macOS security. Right-click on the executable and select "Open" to bypass this.
-- **Linux Library Path**: On Linux, use the provided `set_library_path.sh` script to ensure all libraries are found correctly.
-- **PIL Library Issues**: If you encounter errors with PIL libraries not being found (e.g., `libtiff.6.dylib`), ensure you're using the setup with cleanup disabled (default behavior).
+- **Linux Library Path**: On Linux, use the provided `run_comfyui.sh` script to ensure all libraries are found correctly.
+- **PIL Library Issues**: If you encounter errors with PIL libraries not being found (e.g., `libtiff.6.dylib`), use the platform-specific helper script (`run_comfyui.sh` on macOS/Linux or `run_comfyui.bat` on Windows) which sets the necessary environment variables.
+- **General Library Issues**: Always use the provided helper scripts to run ComfyUI, as they set up the correct environment for each platform.
 
 ## Development
 

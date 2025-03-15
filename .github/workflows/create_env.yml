@@ -130,9 +130,19 @@ jobs:
     - name: Create zip file
       run: |
         if [ "$RUNNER_OS" == "Windows" ]; then
-          powershell -Command "Compress-Archive -Path anymatix -DestinationPath ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip -Force"
+          # Create a parent directory to ensure anymatix is included in the zip
+          mkdir -p temp_zip_dir
+          cp -r anymatix temp_zip_dir/
+          powershell -Command "Compress-Archive -Path temp_zip_dir/anymatix -DestinationPath ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip -Force"
+          rm -rf temp_zip_dir
         else
-          zip -r ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip anymatix
+          # Create a zip that includes the anymatix directory itself
+          mkdir -p temp_zip_dir
+          cp -r anymatix temp_zip_dir/
+          cd temp_zip_dir
+          zip -r ../${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}.zip anymatix
+          cd ..
+          rm -rf temp_zip_dir
         fi
       shell: bash
 
