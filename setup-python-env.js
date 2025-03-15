@@ -15,14 +15,8 @@ const enableCleanup = args.some(arg =>
   arg === '--enable-cleanup' ||
   arg === '-c'
 );
-const testLauncher = args.some(arg =>
-  arg === '--test-launcher=true' ||
-  arg === '--test-launcher' ||
-  arg === '-t'
-);
 
 console.log(`Cleanup ${enableCleanup ? 'enabled' : 'disabled'}`);
-console.log(`Test launcher ${testLauncher ? 'enabled' : 'disabled'}`);
 
 // Handle glob package differences between versions
 const glob = require('glob');
@@ -893,99 +887,6 @@ echo "Installing package(s): $@"
   }
 }
 
-// Function to test the launcher by running ComfyUI
-async function testComfyUILauncher() {
-  console.log('\nTesting ComfyUI launcher...');
-
-  // Determine the platform-specific launcher script
-  let launcherScript;
-  if (os.platform() === 'win32') {
-    launcherScript = path.join(ANYMATIX_DIR, 'run_comfyui.bat');
-  } else {
-    launcherScript = path.join(ANYMATIX_DIR, 'run_comfyui.sh');
-  }
-
-  // Check if the launcher script exists
-  if (!fs.existsSync(launcherScript)) {
-    console.error(`Error: Launcher script ${launcherScript} does not exist!`);
-    return false;
-  }
-
-  console.log(`Using launcher script: ${launcherScript}`);
-
-  try {
-    // Create a child process to run ComfyUI
-    const isWindows = os.platform() === 'win32';
-    const command = isWindows ? launcherScript : `bash ${launcherScript}`;
-
-    console.log(`Executing: ${command}`);
-
-    // Use spawn to capture output in real-time
-    const child = isWindows
-      ? require('child_process').spawn('cmd.exe', ['/c', launcherScript], { shell: true })
-      : require('child_process').spawn('bash', [launcherScript]);
-
-    // Flag to track if we've found the IP address
-    let ipAddressFound = false;
-    let timeout = null;
-
-    // Set a timeout to kill the process if it takes too long
-    timeout = setTimeout(() => {
-      console.error('Timeout waiting for ComfyUI to start. Killing process...');
-      child.kill();
-    }, 60000); // 60 seconds timeout
-
-    // Process stdout data
-    child.stdout.on('data', (data) => {
-      const output = data.toString();
-      console.log(output);
-
-      // Check if the output contains the IP address pattern
-      if (output.includes('http://') && output.includes('Running on')) {
-        console.log('ComfyUI started successfully! IP address found in output.');
-        ipAddressFound = true;
-
-        // Clear the timeout
-        if (timeout) {
-          clearTimeout(timeout);
-          timeout = null;
-        }
-
-        // Wait a moment to ensure everything is captured, then kill the process
-        setTimeout(() => {
-          console.log('Test successful. Killing ComfyUI process...');
-          child.kill();
-        }, 2000);
-      }
-    });
-
-    // Process stderr data
-    child.stderr.on('data', (data) => {
-      console.error(`stderr: ${data.toString()}`);
-    });
-
-    // Handle process exit
-    return new Promise((resolve) => {
-      child.on('close', (code) => {
-        if (timeout) {
-          clearTimeout(timeout);
-        }
-
-        if (ipAddressFound) {
-          console.log(`ComfyUI process exited with code ${code}. Launcher test successful!`);
-          resolve(true);
-        } else {
-          console.error(`ComfyUI process exited with code ${code}. Launcher test failed!`);
-          resolve(false);
-        }
-      });
-    });
-  } catch (error) {
-    console.error(`Error testing launcher: ${error.message}`);
-    return false;
-  }
-}
-
 // Main function
 async function main() {
   try {
@@ -1108,18 +1009,6 @@ async function main() {
     console.log('\nSetup completed successfully!');
     console.log(`Python with required packages installed at: ${MINIFORGE_DIR}`);
     console.log(`Version: ${version}`);
-
-    // Test the launcher if enabled
-    if (testLauncher) {
-      const testResult = await testComfyUILauncher();
-      if (testResult) {
-        console.log('\nLauncher test completed successfully!');
-      } else {
-        console.error('\nLauncher test failed!');
-        process.exit(1);
-      }
-    }
-
     console.log('\nTo install additional packages, use:');
     if (os.platform() === 'win32') {
       console.log('  install_package.bat package_name');

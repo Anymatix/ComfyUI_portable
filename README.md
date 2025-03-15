@@ -149,15 +149,7 @@ node setup-python-env.js
 
 # Enable cleanup (may cause issues with some libraries)
 node setup-python-env.js --enable-cleanup=true
-
-# Test the launcher after setup
-node setup-python-env.js --test-launcher
-
-# Enable cleanup and test the launcher
-node setup-python-env.js --enable-cleanup=true --test-launcher
 ```
-
-The `--test-launcher` (or `-t`) option will run ComfyUI after setup, wait for it to start and print its IP address, and then automatically terminate it. This is useful for verifying that the environment is correctly set up and the launcher script works properly.
 
 ## License
 
