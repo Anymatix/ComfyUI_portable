@@ -111,4 +111,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_ROOT_NAME }}-v${{ env.RELEASE_VERSION }}-${{ runner.os }}
-        path: ${{ env.ZIP_PATH }} 
+        path: anymatix
+        compression-level: 9 

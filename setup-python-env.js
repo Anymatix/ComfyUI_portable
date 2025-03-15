@@ -348,7 +348,7 @@ async function cleanupEnvironment() {
     const pythonLibDirs = await promisifiedGlob(path.join(MINIFORGE_DIR, 'lib', 'python*'));
     for (const pythonLibDir of pythonLibDirs) {
       if (fs.existsSync(pythonLibDir) && fs.statSync(pythonLibDir).isDirectory()) {
-        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter', 'ensurepip', 'distutils', 'lib2to3', 'unittest'];
+        const modulesToRemove = ['idlelib', 'turtledemo', 'tkinter', 'ensurepip', 'distutils', 'lib2to3'];
         for (const module of modulesToRemove) {
           const modulePath = path.join(pythonLibDir, module);
           if (fs.existsSync(modulePath)) {
