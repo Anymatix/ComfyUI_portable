@@ -116,7 +116,14 @@ cd anymatix
 ./run_comfyui.sh
 ```
 
-These scripts set up the necessary environment variables and launch ComfyUI with the correct Python interpreter.
+These scripts set up the necessary environment variables and launch ComfyUI with the correct Python interpreter. They automatically:
+
+- Set the appropriate library path environment variables (`PATH` on Windows, `LD_LIBRARY_PATH` on Linux, `DYLD_LIBRARY_PATH` on macOS)
+- Add both the main library directory and the PIL/.dylibs directory to the search paths
+- Change to the correct directory before launching ComfyUI
+- Pass any additional arguments to ComfyUI
+
+If you encounter any library loading issues, the helper scripts should resolve them by ensuring all libraries are found correctly.
 
 ## Known Issues and Solutions
 

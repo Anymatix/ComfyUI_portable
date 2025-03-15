@@ -302,10 +302,42 @@ async function setupPILDynamicLibraries() {
           const tiffLibs = await promisifiedGlob(path.join(libDir, '**', 'libtiff*.dylib'));
           if (tiffLibs.length > 0) {
             console.log(`Found ${tiffLibs.length} libtiff libraries: ${tiffLibs.join(', ')}`);
+
+            // Ensure libtiff.6.dylib is copied to PIL/.dylibs
+            for (const tiffLib of tiffLibs) {
+              const destFile = path.join(dylibsDir, path.basename(tiffLib));
+              console.log(`Copying ${tiffLib} to ${destFile}`);
+              fs.copyFileSync(tiffLib, destFile);
+            }
           } else {
             console.warn('Warning: libtiff.6.dylib not found in library directory!');
+
+            // Try to find libtiff in other locations
+            console.log('Searching for libtiff in other locations...');
+
+            // Check if libtiff is available in the system
+            try {
+              const { stdout } = await execAsync('find /usr/local/lib /usr/lib -name "libtiff*.dylib" 2>/dev/null || true');
+              const systemTiffLibs = stdout.trim().split('\n').filter(Boolean);
+
+              if (systemTiffLibs.length > 0) {
+                console.log(`Found system libtiff libraries: ${systemTiffLibs.join(', ')}`);
+
+                // Copy system libtiff libraries to PIL/.dylibs
+                for (const tiffLib of systemTiffLibs) {
+                  const destFile = path.join(dylibsDir, path.basename(tiffLib));
+                  console.log(`Copying system ${tiffLib} to ${destFile}`);
+                  fs.copyFileSync(tiffLib, destFile);
+                }
+              } else {
+                console.warn('Warning: No system libtiff libraries found!');
+              }
+            } catch (error) {
+              console.warn(`Warning: Error searching for system libtiff libraries: ${error.message}`);
+            }
           }
 
+          // Copy all dylibs to ensure all dependencies are available
           for (const pattern of dylibPatterns) {
             const libFiles = await promisifiedGlob(path.join(libDir, pattern));
             console.log(`Found ${libFiles.length} libraries with pattern ${pattern}`);
@@ -313,6 +345,36 @@ async function setupPILDynamicLibraries() {
               const destFile = path.join(dylibsDir, path.basename(libFile));
               console.log(`Copying ${libFile} to ${destFile}`);
               fs.copyFileSync(libFile, destFile);
+            }
+          }
+
+          // Create symbolic links for common library names if they don't exist
+          // This helps with library versioning issues
+          const commonLibs = [
+            { from: 'libtiff.6.dylib', to: 'libtiff.dylib' },
+            { from: 'libjpeg.62.4.0.dylib', to: 'libjpeg.dylib' },
+            { from: 'libpng16.16.dylib', to: 'libpng.dylib' },
+            { from: 'libwebp.7.dylib', to: 'libwebp.dylib' }
+          ];
+
+          for (const lib of commonLibs) {
+            const fromPath = path.join(dylibsDir, lib.from);
+            const toPath = path.join(dylibsDir, lib.to);
+
+            if (fs.existsSync(fromPath) && !fs.existsSync(toPath)) {
+              try {
+                fs.symlinkSync(lib.from, toPath);
+                console.log(`Created symbolic link from ${lib.from} to ${lib.to}`);
+              } catch (error) {
+                console.warn(`Warning: Could not create symbolic link: ${error.message}`);
+                // If symlink fails, try to copy the file instead
+                try {
+                  fs.copyFileSync(fromPath, toPath);
+                  console.log(`Copied ${lib.from} to ${lib.to} (symlink failed)`);
+                } catch (copyError) {
+                  console.warn(`Warning: Could not copy file: ${copyError.message}`);
+                }
+              }
             }
           }
         } else if (os.platform() === 'linux') {
@@ -912,16 +974,36 @@ async function main() {
     // Copy platform-specific helper scripts to anymatix directory
     console.log('Copying platform-specific helper scripts...');
     if (os.platform() === 'win32') {
-      fs.copyFileSync(path.join(__dirname, 'run_comfyui_windows.bat'), path.join(ANYMATIX_DIR, 'run_comfyui.bat'));
-      console.log('Copied run_comfyui_windows.bat to anymatix/run_comfyui.bat');
+      const scriptPath = path.join(ANYMATIX_DIR, 'run_comfyui.bat');
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_windows.bat'), scriptPath);
+      console.log(`Copied run_comfyui_windows.bat to ${scriptPath}`);
     } else if (os.platform() === 'darwin') {
-      fs.copyFileSync(path.join(__dirname, 'run_comfyui_macos.sh'), path.join(ANYMATIX_DIR, 'run_comfyui.sh'));
-      execSync(`chmod +x ${path.join(ANYMATIX_DIR, 'run_comfyui.sh')}`);
-      console.log('Copied run_comfyui_macos.sh to anymatix/run_comfyui.sh and made it executable');
+      const scriptPath = path.join(ANYMATIX_DIR, 'run_comfyui.sh');
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_macos.sh'), scriptPath);
+      execSync(`chmod +x ${scriptPath}`);
+      console.log(`Copied run_comfyui_macos.sh to ${scriptPath} and made it executable`);
     } else if (os.platform() === 'linux') {
-      fs.copyFileSync(path.join(__dirname, 'run_comfyui_linux.sh'), path.join(ANYMATIX_DIR, 'run_comfyui.sh'));
-      execSync(`chmod +x ${path.join(ANYMATIX_DIR, 'run_comfyui.sh')}`);
-      console.log('Copied run_comfyui_linux.sh to anymatix/run_comfyui.sh and made it executable');
+      const scriptPath = path.join(ANYMATIX_DIR, 'run_comfyui.sh');
+      fs.copyFileSync(path.join(__dirname, 'run_comfyui_linux.sh'), scriptPath);
+      execSync(`chmod +x ${scriptPath}`);
+      console.log(`Copied run_comfyui_linux.sh to ${scriptPath} and made it executable`);
+    }
+
+    // Verify that the script was copied correctly
+    if (os.platform() === 'win32') {
+      const scriptPath = path.join(ANYMATIX_DIR, 'run_comfyui.bat');
+      if (fs.existsSync(scriptPath)) {
+        console.log(`Verified that ${scriptPath} exists`);
+      } else {
+        console.error(`Error: ${scriptPath} does not exist!`);
+      }
+    } else {
+      const scriptPath = path.join(ANYMATIX_DIR, 'run_comfyui.sh');
+      if (fs.existsSync(scriptPath)) {
+        console.log(`Verified that ${scriptPath} exists`);
+      } else {
+        console.error(`Error: ${scriptPath} does not exist!`);
+      }
     }
 
     console.log('\nSetup completed successfully!');
