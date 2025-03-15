@@ -33,9 +33,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        yarn init -y
-        # Use specific versions to avoid compatibility issues
+        # Create a basic package.json if it doesn't exist
+        if [ ! -f package.json ]; then
+          echo '{"name":"ComfyUI_portable","dependencies":{}}' > package.json
+        fi
+        # Install dependencies with specific versions
         yarn add js-yaml@4.1.0 glob@7.2.3
+      shell: bash
 
     - name: Create version.yml file
       run: |

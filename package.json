@@ -1,6 +1,5 @@
 {
   "name": "ComfyUI_portable",
-  "packageManager": "yarn@4.4.1",
   "dependencies": {
     "glob": "7.2.3",
     "js-yaml": "4.1.0"
