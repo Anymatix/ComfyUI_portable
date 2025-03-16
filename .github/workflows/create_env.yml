@@ -118,6 +118,14 @@ jobs:
       if: steps.cache-anymatix.outputs.cache-hit != 'true' || env.FORCE_REBUILD == 'true'
       run: node setup-python-env.js --enable-cleanup=${{ env.ENABLE_CLEANUP }}
 
+    # Run the fix_macos_dylibs.sh script for macOS
+    - name: Fix macOS dynamic libraries
+      if: runner.os == 'macOS'
+      run: |
+        chmod +x fix_macos_dylibs.sh
+        ./fix_macos_dylibs.sh
+      shell: bash
+
     # Add debugging steps to check PIL/.dylibs directory
     - name: Debug PIL/.dylibs directory
       run: |
@@ -129,6 +137,8 @@ jobs:
           ls -la "$PIL_DYLIBS_DIR"
           echo "Checking for libtiff.6.dylib:"
           find "$PIL_DYLIBS_DIR" -name "libtiff*.dylib" | sort
+          echo "Checking for libjpeg.62.4.0.dylib:"
+          find "$PIL_DYLIBS_DIR" -name "libjpeg*.dylib" | sort
         else
           echo "PIL/.dylibs directory not found!"
           echo "Searching for PIL directory:"
@@ -137,6 +147,9 @@ jobs:
         
         echo "Searching for libtiff.6.dylib in the entire miniforge directory:"
         find "anymatix/miniforge" -name "libtiff*.dylib" | sort
+        
+        echo "Searching for libjpeg.62.4.0.dylib in the entire miniforge directory:"
+        find "anymatix/miniforge" -name "libjpeg*.dylib" | sort
       shell: bash
 
     - name: List directories (Unix)
