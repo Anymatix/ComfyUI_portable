@@ -293,13 +293,43 @@ async function setupPILDynamicLibraries() {
       if (fs.existsSync(libDir)) {
         // Platform-specific handling
         if (os.platform() === 'darwin') {
-          // On macOS, copy all dylibs as they're typically smaller
+          console.log('Setting up dynamic libraries for macOS...');
+
+          // First, check if libtiff.6.dylib already exists in PIL/.dylibs
+          const existingTiffLib = path.join(dylibsDir, 'libtiff.6.dylib');
+          if (fs.existsSync(existingTiffLib)) {
+            console.log(`libtiff.6.dylib already exists at ${existingTiffLib}`);
+          } else {
+            console.log('libtiff.6.dylib not found in PIL/.dylibs, searching for it...');
+          }
+
           // Enhanced to search in subdirectories as well
           const dylibPatterns = ['*.dylib', '**/*.dylib'];
 
           // Also specifically look for libtiff.6.dylib which is causing the error
           console.log('Specifically looking for libtiff.6.dylib...');
-          const tiffLibs = await promisifiedGlob(path.join(libDir, '**', 'libtiff*.dylib'));
+
+          // Search in multiple locations
+          const searchPaths = [
+            libDir,
+            path.join(MINIFORGE_DIR, 'lib'),
+            '/usr/local/lib',
+            '/usr/lib',
+            // Add more potential paths here
+          ];
+
+          let tiffLibs = [];
+          for (const searchPath of searchPaths) {
+            if (fs.existsSync(searchPath)) {
+              console.log(`Searching for libtiff*.dylib in ${searchPath}...`);
+              const foundLibs = await promisifiedGlob(path.join(searchPath, '**', 'libtiff*.dylib'));
+              if (foundLibs.length > 0) {
+                console.log(`Found ${foundLibs.length} libtiff libraries in ${searchPath}: ${foundLibs.join(', ')}`);
+                tiffLibs = tiffLibs.concat(foundLibs);
+              }
+            }
+          }
+
           if (tiffLibs.length > 0) {
             console.log(`Found ${tiffLibs.length} libtiff libraries: ${tiffLibs.join(', ')}`);
 
@@ -308,6 +338,13 @@ async function setupPILDynamicLibraries() {
               const destFile = path.join(dylibsDir, path.basename(tiffLib));
               console.log(`Copying ${tiffLib} to ${destFile}`);
               fs.copyFileSync(tiffLib, destFile);
+
+              // If we found libtiff.6.dylib specifically, make sure it's also available as libtiff.dylib
+              if (path.basename(tiffLib) === 'libtiff.6.dylib') {
+                const genericDestFile = path.join(dylibsDir, 'libtiff.dylib');
+                console.log(`Also copying ${tiffLib} to ${genericDestFile}`);
+                fs.copyFileSync(tiffLib, genericDestFile);
+              }
             }
           } else {
             console.warn('Warning: libtiff.6.dylib not found in library directory!');
@@ -331,6 +368,32 @@ async function setupPILDynamicLibraries() {
                 }
               } else {
                 console.warn('Warning: No system libtiff libraries found!');
+
+                // As a last resort, try to install libtiff using conda
+                console.log('Attempting to install libtiff using conda...');
+                try {
+                  const condaBin = path.join(MINIFORGE_DIR, 'bin', 'conda');
+                  await execAsync(`${condaBin} install -y libtiff`);
+
+                  // Search again after installation
+                  const { stdout } = await execAsync(`find ${MINIFORGE_DIR} -name "libtiff*.dylib" 2>/dev/null || true`);
+                  const newTiffLibs = stdout.trim().split('\n').filter(Boolean);
+
+                  if (newTiffLibs.length > 0) {
+                    console.log(`Found newly installed libtiff libraries: ${newTiffLibs.join(', ')}`);
+
+                    // Copy newly installed libtiff libraries to PIL/.dylibs
+                    for (const tiffLib of newTiffLibs) {
+                      const destFile = path.join(dylibsDir, path.basename(tiffLib));
+                      console.log(`Copying newly installed ${tiffLib} to ${destFile}`);
+                      fs.copyFileSync(tiffLib, destFile);
+                    }
+                  } else {
+                    console.warn('Warning: No libtiff libraries found after installation!');
+                  }
+                } catch (condaError) {
+                  console.warn(`Warning: Error installing libtiff with conda: ${condaError.message}`);
+                }
               }
             } catch (error) {
               console.warn(`Warning: Error searching for system libtiff libraries: ${error.message}`);
@@ -376,6 +439,15 @@ async function setupPILDynamicLibraries() {
                 }
               }
             }
+          }
+
+          // Print the final contents of the .dylibs directory
+          console.log('Final contents of PIL/.dylibs directory:');
+          try {
+            const dylibsContents = fs.readdirSync(dylibsDir);
+            console.log(dylibsContents.join('\n'));
+          } catch (error) {
+            console.warn(`Warning: Could not read .dylibs directory: ${error.message}`);
           }
         } else if (os.platform() === 'linux') {
           // On Linux, only copy essential libraries to avoid massive size

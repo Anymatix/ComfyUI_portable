@@ -14,7 +14,7 @@ on:
       force_rebuild:
         description: 'Force rebuild ignoring cache (true/false)'
         required: false
-        default: 'false'
+        default: 'true'
       enable_cleanup:
         description: 'Enable miniforge cleanup (WARNING: may break functionality)'
         required: false
@@ -24,12 +24,12 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     env:
       ZIP_ROOT_NAME: ${{ github.event.inputs.zip_root_name || 'anymatix-comfyui-portable' }}
       RELEASE_VERSION: ${{ github.event.inputs.version || '1.0.0' }}
-      FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'false' }}
+      FORCE_REBUILD: ${{ github.event.inputs.force_rebuild || 'true' }}
       ENABLE_CLEANUP: ${{ github.event.inputs.enable_cleanup || 'false' }}
 
     steps:
@@ -117,6 +117,27 @@ jobs:
     - name: Run setup script
       if: steps.cache-anymatix.outputs.cache-hit != 'true' || env.FORCE_REBUILD == 'true'
       run: node setup-python-env.js --enable-cleanup=${{ env.ENABLE_CLEANUP }}
+
+    # Add debugging steps to check PIL/.dylibs directory
+    - name: Debug PIL/.dylibs directory
+      run: |
+        echo "Checking for PIL/.dylibs directory..."
+        PIL_DYLIBS_DIR=$(find "anymatix/miniforge/lib" -path "*/site-packages/PIL/.dylibs" -type d | head -n 1)
+        if [ -n "$PIL_DYLIBS_DIR" ]; then
+          echo "Found PIL/.dylibs directory at: $PIL_DYLIBS_DIR"
+          echo "Contents of PIL/.dylibs directory:"
+          ls -la "$PIL_DYLIBS_DIR"
+          echo "Checking for libtiff.6.dylib:"
+          find "$PIL_DYLIBS_DIR" -name "libtiff*.dylib" | sort
+        else
+          echo "PIL/.dylibs directory not found!"
+          echo "Searching for PIL directory:"
+          find "anymatix/miniforge/lib" -path "*/site-packages/PIL" -type d | sort
+        fi
+        
+        echo "Searching for libtiff.6.dylib in the entire miniforge directory:"
+        find "anymatix/miniforge" -name "libtiff*.dylib" | sort
+      shell: bash
 
     - name: List directories (Unix)
       if: runner.os != 'Windows'
